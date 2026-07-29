@@ -1,4 +1,4 @@
-# 📌 학교쪽지 (SchoolNote)
+# 📌 학교 급식메뉴 포스트잇 (School Lunch Memo)
 
 ![Screenshot](./screenshot.png)
 
