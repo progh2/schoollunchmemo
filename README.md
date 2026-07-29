@@ -126,6 +126,7 @@ project1/
 │  ├─ test_config.py       # 설정 병합·마이그레이션
 │  ├─ test_ui_smoke.py     # offscreen 위젯 렌더
 │  └─ test_day_navigation.py  # 날짜 이동
+├─ sandbox/                # 본체와 무관한 연습 파일
 ├─ run.py                  # PyInstaller 진입 스크립트
 ├─ schoolnote.spec         # PyInstaller 빌드 설정
 ├─ requirements.txt
