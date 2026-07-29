@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -38,7 +39,7 @@ DANGER_COLOR = "#C0261C"
 NOTE_WIDTH = 280
 MAX_DISHES = 15
 MIN_NOTE_HEIGHT = 90
-MAX_HEIGHT_RATIO = 0.7  # 화면 높이 대비 상한 (W-07)
+MAX_HEIGHT_RATIO = 0.5  # 화면 높이 대비 상한. 넘으면 스크롤한다 (W-07)
 
 CARD_RADIUS = 10
 CARD_BORDER = 1  # QSS의 카드 테두리 두께
@@ -46,6 +47,7 @@ SHADOW_STEPS = 8  # 그림자 번짐 폭(px)
 SHADOW_DROP = 3  # 아래로 내린 정도(px)
 SHADOW_MARGIN = SHADOW_STEPS + SHADOW_DROP + 1
 CLICK_SLOP = 4  # 이보다 적게 움직였으면 끌기가 아니라 클릭
+QWIDGETSIZE_MAX = 16777215  # Qt가 쓰는 크기 상한
 _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 _RELATIVE_LABELS = {-2: "그저께", -1: "어제", 0: "오늘", 1: "내일", 2: "모레"}
 
@@ -165,14 +167,37 @@ class StickyNote(QWidget):
         self.rule.setFixedHeight(1)
         inner.addWidget(self.rule)
 
-        self.body = QLabel(self.card)
+        # 내용이 길면 창을 늘리는 대신 스크롤한다. 창을 늘리면 화면 상한과
+        # 레이아웃 요구 높이가 충돌해 Qt가 리사이즈를 반복하다 멈춘다.
+        self.body = QLabel()
         self.body.setObjectName("body")
         self.body.setWordWrap(True)
         self.body.setTextFormat(Qt.TextFormat.RichText)
         self.body.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
-        inner.addWidget(self.body)
+        # 본문에서도 끌기와 클릭이 통하도록 마우스를 통과시킨다
+        self.body.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+
+        self.scroll = QScrollArea(self.card)
+        self.scroll.setObjectName("scroll")
+        self.scroll.setWidgetResizable(False)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.scroll.setWidget(self.body)
+        # 스크롤바는 살려두고 뷰포트만 통과시킨다
+        self.scroll.viewport().setAutoFillBackground(False)
+        self.scroll.viewport().setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        inner.addWidget(self.scroll)
 
         self.footer_label = QLabel(self.card)
         self.footer_label.setObjectName("footer")
@@ -214,7 +239,29 @@ class StickyNote(QWidget):
                 font-weight: 600;
             }}
             QFrame#rule {{ background: {palette['line']}; border: none; }}
-            QLabel#body {{ color: {palette['text']}; font-size: 10pt; }}
+            QLabel#body {{
+                color: {palette['text']};
+                font-size: 10pt;
+                background: transparent;
+            }}
+            QScrollArea#scroll {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 8px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {palette['line']};
+                border-radius: 4px;
+                min-height: 24px;
+            }}
+            QScrollBar::handle:vertical:hover {{ background: {palette['muted']}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
             QLabel#footer {{ color: {palette['muted']}; font-size: 8pt; }}
             QPushButton#tool {{
                 color: {palette['muted']};
@@ -272,12 +319,31 @@ class StickyNote(QWidget):
         self.footer_label.setVisible(bool(view.footer))
         self._refit()
 
-    def _refit(self) -> None:
-        """내용에 맞춰 높이를 다시 잡는다.
+    def _chrome_height(self) -> int:
+        """본문을 뺀 나머지(날짜줄·구분선·꼬리말·여백)가 차지하는 높이."""
+        outer = self.layout()
+        inner = self.card.layout()
+        if outer is None or inner is None:
+            return 0
+        _, outer_top, _, outer_bottom = outer.getContentsMargins()
+        _, inner_top, _, inner_bottom = inner.getContentsMargins()
+        spacing = inner.spacing()
 
-        본문 라벨의 높이를 직접 계산해 고정한다. Qt에 맡기면 워드랩 높이가
-        최종 폭이 아닌 값으로 계산돼, 창을 실제 필요보다 작게 요청하고
-        Windows가 이를 거부하면서 setGeometry 경고가 뜬다.
+        height = outer_top + outer_bottom + inner_top + inner_bottom
+        height += CARD_BORDER * 2
+        height += self.date_label.sizeHint().height()
+        height += self.rule.height()
+        height += spacing * 2
+        if self.footer_label.text():
+            height += self.footer_label.sizeHint().height() + spacing
+        return height
+
+    def _refit(self) -> None:
+        """내용에 맞춰 창 높이를 다시 잡는다.
+
+        창 자체에는 최소·최대를 걸지 않는다. 걸어두면 레이아웃이 요구하는
+        높이와 충돌해 Qt가 리사이즈를 반복하다 멈춘다. 대신 본문 영역의
+        높이만 제한하고, 넘치는 만큼은 스크롤로 넘긴다.
         """
         outer = self.layout()
         inner = self.card.layout()
@@ -286,28 +352,47 @@ class StickyNote(QWidget):
 
         outer_left, _, outer_right, _ = outer.getContentsMargins()
         inner_left, _, inner_right, _ = inner.getContentsMargins()
-        width = (
+        full_width = (
             NOTE_WIDTH
             - outer_left - outer_right
             - inner_left - inner_right
             - CARD_BORDER * 2
         )
-        self.body.setFixedWidth(width)
-        height = self.body.heightForWidth(width)
-        if height > 0:
-            self.body.setFixedHeight(height)
 
         screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is not None:
-            limit = int(screen.availableGeometry().height() * MAX_HEIGHT_RATIO)
-            self.setMaximumHeight(max(MIN_NOTE_HEIGHT, limit))
-        self.setMinimumHeight(MIN_NOTE_HEIGHT)
+        available = screen.availableGeometry().height() if screen else 900
+        body_limit = max(
+            MIN_NOTE_HEIGHT, int(available * MAX_HEIGHT_RATIO) - self._chrome_height()
+        )
+
+        width = full_width
+        needed = self._body_height(width)
+        if needed > body_limit:
+            # 스크롤바가 생기면 그만큼 글줄이 좁아지므로 다시 잰다
+            width = full_width - self.scroll.verticalScrollBar().sizeHint().width()
+            needed = self._body_height(width)
+
+        self.body.resize(width, needed)
+        self.scroll.setFixedHeight(min(needed, body_limit))
 
         inner.invalidate()
         outer.invalidate()
         inner.activate()
         outer.activate()
         self.adjustSize()
+
+    def _body_height(self, width: int) -> int:
+        """주어진 폭에서 본문이 실제로 필요한 높이.
+
+        재는 동안에는 크기 제약을 풀어 둔다. 제약이 걸린 채로 물으면 이전에
+        고정해 둔 값이 그대로 돌아와, 재료를 접어도 높이가 줄지 않는다.
+        """
+        self.body.setMinimumSize(0, 0)
+        self.body.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        height = self.body.heightForWidth(width)
+        if height <= 0:
+            height = self.body.sizeHint().height()
+        return max(height, 1)
 
     def _build_html(self, view: NoteView) -> str:
         palette = colors(self._color)
@@ -538,11 +623,18 @@ class StickyNote(QWidget):
         event.accept()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
-        # 위로 굴리면 과거, 아래로 굴리면 미래
         delta = event.angleDelta().y()
-        if delta:
+        if not delta:
+            return
+        bar = self.scroll.verticalScrollBar()
+        if bar.maximum() > 0:
+            # 읽을 내용이 남아 있으면 스크롤이 먼저다.
+            # 여기서 날짜까지 넘기면 읽던 중에 화면이 바뀌어 버린다.
+            bar.setValue(bar.value() - delta)
+        else:
+            # 위로 굴리면 과거, 아래로 굴리면 미래
             self.dateStepped.emit(-1 if delta > 0 else 1)
-            event.accept()
+        event.accept()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         menu = QMenu(self)

@@ -144,6 +144,97 @@ class TestDetailsToggle:
         assert f"<span style='color:{DANGER_COLOR}; font-weight:600'>쇠고기</span>" in body
 
 
+LONG_ROWS = [
+    {
+        "MLSV_YMD": "20260724",
+        "MMEAL_SC_CODE": "1",
+        "MMEAL_SC_NM": "조식",
+        "DDISH_NM": "<br/>".join(
+            [
+                "칼슘찹쌀밥",
+                "김치찌개 (5.9.10.13)",
+                "모듬버섯불고기 (5.6.10.13)",
+                "어묵볶음 (1.5.6.13.18)",
+                "열무김치 (9)",
+                "김자반",
+                "요구르트 (2.13)",
+            ]
+        ),
+        "CAL_INFO": "1228.3 Kcal",
+        "ORPLC_INFO": "<br/>".join(
+            [
+                "쌀 : 국내산",
+                "돼지고기 : 국내산",
+                "쇠고기 : 호주산",
+                "배추김치 : 국내산",
+                "고춧가루 : 중국산",
+            ]
+        ),
+    },
+    {
+        "MLSV_YMD": "20260724",
+        "MMEAL_SC_CODE": "2",
+        "MMEAL_SC_NM": "중식",
+        "DDISH_NM": "<br/>".join(
+            [
+                "땡초고기볶음밥 (5.6.10.13.18)",
+                "미소장국 (5.6.8.9.10.13.15.16.17.18)",
+                "상추겉절이 (13)",
+                "바사삭양념마리치킨 (1.2.5.12.15)",
+                "치킨무 (13)",
+                "수박",
+                "양배추샐러드 (1.5.12)",
+            ]
+        ),
+        "CAL_INFO": "2602.9 Kcal",
+        "ORPLC_INFO": "닭고기 : 국내산<br/>양배추 : 국내산",
+    },
+]
+
+
+def test_long_content_scrolls_instead_of_growing_window(note, qapp, monkeypatch):
+    """실제 급식처럼 내용이 길어도 창이 화면 상한을 넘어서면 안 된다."""
+    import app.sticky as sticky
+
+    # 테스트 화면 크기에 좌우되지 않도록 상한을 직접 정한다
+    monkeypatch.setattr(sticky, "MAX_HEIGHT_RATIO", 0.3)
+    limit = qapp.primaryScreen().availableGeometry().height() * 0.3
+
+    note.set_details_default(True)
+    note.render_view(
+        NoteView(
+            day=date(2026, 7, 24),
+            meals=parse_meals(LONG_ROWS),
+            show_allergy=True,
+        )
+    )
+
+    assert note.height() <= limit
+    # 넘치는 만큼은 스크롤로 넘어간다
+    assert note.scroll.height() < note.body.height()
+
+
+def test_short_content_needs_no_scroll(note):
+    note.render_view(
+        NoteView(day=date(2026, 7, 29), meals=parse_meals(MEAL_ROWS))
+    )
+    assert note.scroll.height() == note.body.height()
+
+
+def test_toggling_details_repeatedly_stays_stable(note):
+    """클릭을 반복해도 크기가 발산하지 않아야 한다 (리사이즈 루프 방지)."""
+    note.render_view(
+        NoteView(day=date(2026, 7, 24), meals=parse_meals(LONG_ROWS))
+    )
+    collapsed = note.height()
+    note.toggle_details()
+    expanded = note.height()
+    note.toggle_details()
+    assert note.height() == collapsed
+    note.toggle_details()
+    assert note.height() == expanded
+
+
 def test_message_state_never_blank(note):
     note.render_view(
         NoteView(day=date(2026, 7, 29), message="설정이 필요해요", message_icon="📌")
