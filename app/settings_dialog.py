@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from . import APP_DISPLAY_NAME, NEIS_PORTAL_URL
 from . import secrets_store
+from .allergens import ALLERGENS
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
 from .neis.models import MEAL_TYPE_LABELS, School
@@ -77,6 +79,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._build_key_tab(), "인증키")
         self.tabs.addTab(self._build_school_tab(), "학교")
         self.tabs.addTab(self._build_display_tab(), "표시")
+        self.tabs.addTab(self._build_allergy_tab(), "알레르기")
         layout.addWidget(self.tabs)
 
         buttons = QDialogButtonBox(
@@ -326,11 +329,16 @@ class SettingsDialog(QDialog):
         form.addRow("학년 필터", self.grade_combo)
 
         self.calorie_check = QCheckBox("칼로리 표시", form_group)
-        self.allergy_check = QCheckBox("알레르기 번호 표시", form_group)
-        self.origin_check = QCheckBox("원산지 표시", form_group)
+        self.allergy_check = QCheckBox("모든 알레르기 번호 표시", form_group)
+        self.expand_check = QCheckBox(
+            "재료·원산지를 처음부터 펼쳐 두기", form_group
+        )
+        self.expand_check.setToolTip(
+            "펼치지 않아도 포스트잇을 클릭하면 언제든 열고 닫을 수 있습니다."
+        )
         form.addRow(self.calorie_check)
         form.addRow(self.allergy_check)
-        form.addRow(self.origin_check)
+        form.addRow(self.expand_check)
         layout.addWidget(form_group)
 
         window_group = QGroupBox("창", tab)
@@ -360,6 +368,51 @@ class SettingsDialog(QDialog):
         layout.addStretch(1)
         return tab
 
+    # ---------------------------------------------------------- 알레르기 탭
+
+    def _build_allergy_tab(self) -> QWidget:
+        tab = QWidget(self)
+        layout = QVBoxLayout(tab)
+
+        intro = QLabel(
+            "해당하는 항목을 고르면 그 알레르기가 들어간 음식이 "
+            "포스트잇에 <b>빨갛게</b> 표시됩니다.",
+            tab,
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        group = QGroupBox("내 알레르기", tab)
+        grid = QGridLayout(group)
+        self.allergy_checks: dict[int, QCheckBox] = {}
+        for index, (code, name) in enumerate(sorted(ALLERGENS.items())):
+            check = QCheckBox(f"{code}. {name}", group)
+            self.allergy_checks[code] = check
+            grid.addWidget(check, index // 3, index % 3)
+        layout.addWidget(group)
+
+        buttons = QHBoxLayout()
+        clear_button = QPushButton("모두 해제", tab)
+        clear_button.clicked.connect(
+            lambda: [c.setChecked(False) for c in self.allergy_checks.values()]
+        )
+        buttons.addWidget(clear_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        note = QLabel(
+            "⚠️ 요리명 뒤 번호는 학교가 등록한 값이고, 재료·원산지 문구는 "
+            "이름으로 찾아 표시합니다. 참고용이므로 최종 확인은 학교 공지를 "
+            "따라 주세요.",
+            tab,
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {_WARN_COLOR};")
+        layout.addWidget(note)
+
+        layout.addStretch(1)
+        return tab
+
     # ------------------------------------------------------------ 값 입출력
 
     def _load_values(self) -> None:
@@ -372,7 +425,15 @@ class SettingsDialog(QDialog):
         self.grade_combo.setCurrentIndex(max(0, index))
         self.calorie_check.setChecked(bool(display.get("show_calorie", True)))
         self.allergy_check.setChecked(bool(display.get("show_allergy", False)))
-        self.origin_check.setChecked(bool(display.get("show_origin", False)))
+        self.expand_check.setChecked(bool(display.get("expand_details", False)))
+
+        alerts = {
+            int(code)
+            for code in display.get("allergy_alerts", [])
+            if str(code).isdigit()
+        }
+        for code, check in self.allergy_checks.items():
+            check.setChecked(code in alerts)
 
         color_index = self.color_combo.findData(display.get("color", "yellow"))
         self.color_combo.setCurrentIndex(max(0, color_index))
@@ -411,7 +472,10 @@ class SettingsDialog(QDialog):
         display["grade_filter"] = self.grade_combo.currentData()
         display["show_calorie"] = self.calorie_check.isChecked()
         display["show_allergy"] = self.allergy_check.isChecked()
-        display["show_origin"] = self.origin_check.isChecked()
+        display["expand_details"] = self.expand_check.isChecked()
+        display["allergy_alerts"] = sorted(
+            code for code, check in self.allergy_checks.items() if check.isChecked()
+        )
         display["color"] = self.color_combo.currentData()
         display["opacity"] = self.opacity_slider.value() / 100
         display["always_on_top"] = self.on_top_check.isChecked()

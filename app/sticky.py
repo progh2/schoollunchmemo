@@ -10,11 +10,16 @@ from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QAction, QGuiApplication, QMouseEvent
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QGuiApplication,
+    QMouseEvent,
+    QPainter,
+)
 from PySide6.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -23,11 +28,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import allergens
 from .neis.models import MealMenu, ScheduleEvent
 from .resources.theme import colors
 
+#: 알레르기 경고 색. 파스텔 배경 어디에서도 눈에 띈다.
+DANGER_COLOR = "#C0261C"
+
 NOTE_WIDTH = 280
 MAX_DISHES = 15
+MIN_NOTE_HEIGHT = 90
+MAX_HEIGHT_RATIO = 0.7  # 화면 높이 대비 상한 (W-07)
+
+CARD_RADIUS = 10
+CARD_BORDER = 1  # QSS의 카드 테두리 두께
+SHADOW_STEPS = 8  # 그림자 번짐 폭(px)
+SHADOW_DROP = 3  # 아래로 내린 정도(px)
+SHADOW_MARGIN = SHADOW_STEPS + SHADOW_DROP + 1
+CLICK_SLOP = 4  # 이보다 적게 움직였으면 끌기가 아니라 클릭
 _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 _RELATIVE_LABELS = {-2: "그저께", -1: "어제", 0: "오늘", 1: "내일", 2: "모레"}
 
@@ -51,7 +69,7 @@ class NoteView:
     is_today: bool = True
     show_allergy: bool = False
     show_calorie: bool = True
-    show_origin: bool = False
+    allergy_alerts: frozenset[int] = frozenset()
 
 
 class StickyNote(QWidget):
@@ -67,6 +85,11 @@ class StickyNote(QWidget):
         super().__init__(parent)
         self._color = color
         self._drag_offset: QPoint | None = None
+        self._press_pos: QPoint | None = None
+        self._details_open = False  # 재료·원산지 펼침 여부
+        self._has_details = False
+        self._view: NoteView | None = None
+        self._screen_hooked = False
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -82,16 +105,17 @@ class StickyNote(QWidget):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
+        # 그림자를 그릴 여백. QGraphicsDropShadowEffect는 쓰지 않는다.
+        # 반투명 최상위 창에 이펙트를 걸면 Windows에서 레이어드 창 갱신이
+        # 실패하고(UpdateLayeredWindowIndirect), 창 높이도 어긋난다.
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 14, 14)  # 그림자 여백
+        outer.setContentsMargins(
+            SHADOW_MARGIN, SHADOW_MARGIN - SHADOW_DROP,
+            SHADOW_MARGIN, SHADOW_MARGIN + SHADOW_DROP,
+        )
 
         self.card = QFrame(self)
         self.card.setObjectName("card")
-        shadow = QGraphicsDropShadowEffect(self.card)
-        shadow.setBlurRadius(24)
-        shadow.setOffset(2, 4)
-        shadow.setColor(Qt.GlobalColor.darkGray)
-        self.card.setGraphicsEffect(shadow)
         outer.addWidget(self.card)
 
         inner = QVBoxLayout(self.card)
@@ -182,7 +206,7 @@ class StickyNote(QWidget):
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 {palette['bg']}, stop:1 {palette['bg_bottom']});
                 border: 1px solid {palette['line']};
-                border-radius: 10px;
+                border-radius: {CARD_RADIUS}px;
             }}
             QLabel#date {{
                 color: {palette['text']};
@@ -213,7 +237,23 @@ class StickyNote(QWidget):
 
     # -------------------------------------------------------------- 내용 렌더
 
+    def set_details_default(self, expanded: bool) -> None:
+        """설정에서 정한 기본 펼침 상태. 이후 클릭으로 사용자가 바꿀 수 있다."""
+        self._details_open = expanded
+        if self._view is not None:
+            self.render_view(self._view)
+
+    def toggle_details(self) -> None:
+        if not self._has_details or self._view is None:
+            return
+        self._details_open = not self._details_open
+        self.render_view(self._view)
+
     def render_view(self, view: NoteView) -> None:
+        self._view = view
+        self._has_details = any(
+            meal.origin or meal.nutrition for meal in view.meals
+        )
         palette = colors(self._color)
         text = (
             f"{view.day.month}월 {view.day.day}일 "
@@ -230,7 +270,43 @@ class StickyNote(QWidget):
         self.body.setText(self._build_html(view))
         self.footer_label.setText(view.footer)
         self.footer_label.setVisible(bool(view.footer))
-        self.body.adjustSize()
+        self._refit()
+
+    def _refit(self) -> None:
+        """내용에 맞춰 높이를 다시 잡는다.
+
+        본문 라벨의 높이를 직접 계산해 고정한다. Qt에 맡기면 워드랩 높이가
+        최종 폭이 아닌 값으로 계산돼, 창을 실제 필요보다 작게 요청하고
+        Windows가 이를 거부하면서 setGeometry 경고가 뜬다.
+        """
+        outer = self.layout()
+        inner = self.card.layout()
+        if outer is None or inner is None:
+            return
+
+        outer_left, _, outer_right, _ = outer.getContentsMargins()
+        inner_left, _, inner_right, _ = inner.getContentsMargins()
+        width = (
+            NOTE_WIDTH
+            - outer_left - outer_right
+            - inner_left - inner_right
+            - CARD_BORDER * 2
+        )
+        self.body.setFixedWidth(width)
+        height = self.body.heightForWidth(width)
+        if height > 0:
+            self.body.setFixedHeight(height)
+
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            limit = int(screen.availableGeometry().height() * MAX_HEIGHT_RATIO)
+            self.setMaximumHeight(max(MIN_NOTE_HEIGHT, limit))
+        self.setMinimumHeight(MIN_NOTE_HEIGHT)
+
+        inner.invalidate()
+        outer.invalidate()
+        inner.activate()
+        outer.activate()
         self.adjustSize()
 
     def _build_html(self, view: NoteView) -> str:
@@ -248,6 +324,15 @@ class StickyNote(QWidget):
 
         for meal in view.meals:
             blocks.append(self._meal_html(meal, view, palette))
+
+        if self._has_details:
+            hint = (
+                "재료·원산지 숨기기 ▴" if self._details_open else "재료·원산지 보기 ▾"
+            )
+            blocks.append(
+                f"<p style='margin:4px 0 0 0; font-size:8pt;"
+                f" color:{palette['muted']}'>{hint}</p>"
+            )
 
         if not view.meals and view.meal_note:
             blocks.append(
@@ -281,15 +366,15 @@ class StickyNote(QWidget):
     def _meal_html(
         self, meal: MealMenu, view: NoteView, palette: dict[str, str]
     ) -> str:
+        alerts = set(view.allergy_alerts)
         parts = [
             f"<p style='margin:6px 0 2px 0; font-weight:600;"
             f" color:{palette['muted']}'>🍚 {escape(meal.label)}</p>"
         ]
-        dishes = meal.dishes[:MAX_DISHES]
-        for dish in dishes:
+        for dish in meal.dishes[:MAX_DISHES]:
             parts.append(
                 f"<p style='margin:0 0 1px 0'>"
-                f"{escape(dish.display(view.show_allergy))}</p>"
+                f"{self._dish_html(dish, view, palette, alerts)}</p>"
             )
         if len(meal.dishes) > MAX_DISHES:
             parts.append(
@@ -301,13 +386,47 @@ class StickyNote(QWidget):
                 f"<p style='margin:2px 0 0 0; color:{palette['muted']}'>"
                 f"{meal.calorie:g} kcal</p>"
             )
-        if view.show_origin and meal.origin:
-            origin = escape(meal.origin).replace("\n", "<br/>")
-            parts.append(
-                f"<p style='margin:4px 0 0 0; font-size:8pt;"
-                f" color:{palette['muted']}'>{origin}</p>"
-            )
+        if self._details_open:
+            parts.append(self._details_html(meal, palette, alerts))
         return "".join(parts)
+
+    def _dish_html(
+        self,
+        dish,
+        view: NoteView,
+        palette: dict[str, str],
+        alerts: set[int],
+    ) -> str:
+        hits = allergens.matched(dish.allergens, alerts)
+        name = escape(dish.name)
+        if hits:
+            # 내 알레르기와 겹치는 음식은 빨갛게, 무엇 때문인지도 함께
+            return (
+                f"<span style='color:{DANGER_COLOR}; font-weight:600'>{name}</span>"
+                f"<span style='color:{DANGER_COLOR}; font-size:8pt'>"
+                f" · {escape(allergens.labels(hits))}</span>"
+            )
+        if view.show_allergy and dish.allergens:
+            return (
+                f"{name}<span style='color:{palette['muted']}; font-size:8pt'>"
+                f" ({'.'.join(dish.allergens)})</span>"
+            )
+        return name
+
+    def _details_html(
+        self, meal: MealMenu, palette: dict[str, str], alerts: set[int]
+    ) -> str:
+        sections: list[str] = []
+        for title, text in (("원산지", meal.origin), ("영양", meal.nutrition)):
+            if not text:
+                continue
+            body = allergens.highlight_html(escape(text), alerts, DANGER_COLOR)
+            sections.append(
+                f"<p style='margin:4px 0 0 0; font-size:8pt;"
+                f" color:{palette['muted']}'>"
+                f"<b>{title}</b><br/>{body.replace(chr(10), '<br/>')}</p>"
+            )
+        return "".join(sections)
 
     # -------------------------------------------------------------- 창 동작
 
@@ -352,6 +471,34 @@ class StickyNote(QWidget):
 
     # -------------------------------------------------------------- 이벤트
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # 창이 실제 모니터에 올라간 뒤 다시 재본다. 모니터마다 DPI가 달라
+        # 표시 전에 계산한 글자 높이가 어긋날 수 있다.
+        QTimer.singleShot(0, self._refit)
+        handle = self.windowHandle()
+        if handle is not None and not self._screen_hooked:
+            handle.screenChanged.connect(lambda _: self._refit())
+            self._screen_hooked = True
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """카드 뒤에 그림자를 직접 그린다.
+
+        바깥쪽일수록 겹치는 층이 적어 자연스럽게 옅어진다.
+        """
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(60, 50, 30, 6))
+        base = QRectF(self.card.geometry())
+        for step in range(SHADOW_STEPS, 0, -1):
+            painter.drawRoundedRect(
+                base.adjusted(-step, -step + SHADOW_DROP, step, step + SHADOW_DROP),
+                CARD_RADIUS + step,
+                CARD_RADIUS + step,
+            )
+        painter.end()
+
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt 시그니처
         self._set_buttons_visible(True)
         super().enterEvent(event)
@@ -362,9 +509,8 @@ class StickyNote(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_offset = (
-                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            )
+            self._press_pos = event.globalPosition().toPoint()
+            self._drag_offset = self._press_pos - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -373,11 +519,23 @@ class StickyNote(QWidget):
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if self._drag_offset is not None:
-            self._drag_offset = None
+        if self._drag_offset is None:
+            return
+        self._drag_offset = None
+        moved = CLICK_SLOP + 1
+        if self._press_pos is not None:
+            moved = (
+                event.globalPosition().toPoint() - self._press_pos
+            ).manhattanLength()
+        self._press_pos = None
+
+        if moved <= CLICK_SLOP:
+            # 끌지 않고 눌렀다 뗀 것은 클릭으로 본다
+            self.toggle_details()
+        else:
             self.ensure_on_screen()
             self.positionChanged.emit(self.x(), self.y())
-            event.accept()
+        event.accept()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         # 위로 굴리면 과거, 아래로 굴리면 미래

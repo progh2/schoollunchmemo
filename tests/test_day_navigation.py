@@ -120,6 +120,14 @@ def test_reshowing_note_returns_to_today(controller):
     assert controller._view_day == date.today()
 
 
+def test_empty_data_says_unregistered_not_no_meal(controller):
+    """급식이 없는 것과 학교가 안 올린 것을 구분할 수 없으므로 단정하지 않는다."""
+    controller._render_rows(date.today(), [], [])
+    body = controller.note.body.text()
+    assert "등록되지 않았어요" in body
+    assert "급식이 없어요" not in body
+
+
 def test_stale_response_does_not_overwrite_current_day(controller):
     """응답을 기다리는 사이 날짜를 옮기면 늦게 온 결과는 무시한다."""
     controller.step_day(1)

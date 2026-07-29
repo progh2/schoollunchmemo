@@ -28,7 +28,8 @@ DEFAULTS: dict[str, Any] = {
         "grade_filter": None,
         "show_allergy": False,
         "show_calorie": True,
-        "show_origin": False,
+        "expand_details": False,  # 재료·원산지를 기본으로 펼쳐 둘지
+        "allergy_alerts": [],  # 빨갛게 표시할 알레르기 번호
         "always_on_top": True,
         "opacity": 0.95,
         "color": "yellow",
@@ -115,7 +116,11 @@ class Config:
 
     @staticmethod
     def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
-        """설정 스키마 마이그레이션. 지금은 버전 1뿐이라 통과시킨다."""
+        """설정 스키마 마이그레이션."""
+        display = raw.get("display")
+        if isinstance(display, dict) and "show_origin" in display:
+            # 원산지는 켜고 끄는 항목에서 접었다 펴는 항목이 되었다
+            display.setdefault("expand_details", bool(display.pop("show_origin")))
         raw["version"] = CONFIG_VERSION
         return raw
 

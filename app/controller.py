@@ -86,14 +86,14 @@ class AppController(QObject):
             log.warning("시스템 트레이를 쓸 수 없습니다. 포스트잇을 항상 표시합니다.")
             self._config.display["show_on_start"] = True
 
-        window = self._config.window
-        self.note.restore_position(window.get("x"), window.get("y"))
-
-        if self._config.display.get("show_on_start", True):
-            self.show_note()
-
+        # 내용을 먼저 채운 뒤 띄운다. 빈 창이 떴다가 커지는 것을 막는다.
         self.scheduler.start()
         self.refresh()
+
+        window = self._config.window
+        self.note.restore_position(window.get("x"), window.get("y"))
+        if self._config.display.get("show_on_start", True):
+            self.show_note()
 
         if not self._is_ready():
             self.open_settings()
@@ -107,6 +107,7 @@ class AppController(QObject):
         self.note.apply_color(color)
         self.note.setWindowOpacity(float(display.get("opacity", 0.95)))
         self.note.set_always_on_top(bool(display.get("always_on_top", True)))
+        self.note.set_details_default(bool(display.get("expand_details", False)))
         self.tray.set_color(color)
         school = self._config.school
         self.tray.set_school_name(school.get("school_name", "") if school else "")
@@ -277,14 +278,18 @@ class AppController(QObject):
             event for event in parse_schedule(schedule_rows) if event.applies_to(grade)
         ]
 
-        no_meal = (
-            "오늘은 급식이 없어요"
-            if day == date.today()
-            else "이 날은 급식이 없어요"
-        )
+        # 급식이 없는 날인지 학교가 아직 안 올린 것인지 NEIS는 구분해 주지
+        # 않는다. "급식이 없다"고 단정하면 오해를 부르므로 미등록으로 알린다.
+        no_meal = "급식 정보가 등록되지 않았어요"
 
         if not meals and not events:
-            self._show_message(no_meal, "🌙", footer=footer, day=day)
+            self._show_message(
+                no_meal,
+                "📭",
+                detail="학교에서 아직 올리지 않았을 수 있어요.",
+                footer=footer,
+                day=day,
+            )
             return
 
         self.note.render_view(
@@ -293,11 +298,15 @@ class AppController(QObject):
                 is_today=day == date.today(),
                 meals=meals,
                 events=events,
-                meal_note=f"🌙 {no_meal}",
+                meal_note=f"📭 {no_meal}",
                 footer=footer,
                 show_allergy=bool(display.get("show_allergy", False)),
                 show_calorie=bool(display.get("show_calorie", True)),
-                show_origin=bool(display.get("show_origin", False)),
+                allergy_alerts=frozenset(
+                    int(code)
+                    for code in display.get("allergy_alerts", [])
+                    if str(code).isdigit()
+                ),
             )
         )
 
