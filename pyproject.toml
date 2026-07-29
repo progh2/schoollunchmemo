@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# pytest를 직접 호출해도 저장소 최상위가 import 경로에 들어가도록 한다.
+# 이게 없으면 `python -m pytest`로는 되고 `pytest`로는 app을 못 찾는다.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
