@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
@@ -34,6 +34,9 @@ _FAILURE_TEXT: dict[ResultKind, str] = {
     ResultKind.UNKNOWN: "정보를 가져오지 못했어요",
 }
 
+#: 앞뒤로 이동할 수 있는 최대 일수. 이보다 멀면 NEIS에도 자료가 없다.
+MAX_DAY_OFFSET = 365
+
 
 class AppController(QObject):
     def __init__(self, app: QApplication) -> None:
@@ -42,7 +45,8 @@ class AppController(QObject):
         self._config = Config.load()
         self._client = NeisClient(secrets_store.get_key)
         self._dialog: SettingsDialog | None = None
-        self._fetching = False
+        self._view_day = date.today()  # 지금 보고 있는 날
+        self._inflight: set[date] = set()
 
         self.note = StickyNote(color=self._config.display.get("color", "yellow"))
         self.tray = Tray(color=self._config.display.get("color", "yellow"))
@@ -58,6 +62,8 @@ class AppController(QObject):
         self.note.hideRequested.connect(self.hide_note)
         self.note.quitRequested.connect(self.quit)
         self.note.positionChanged.connect(self._on_position_changed)
+        self.note.dateStepped.connect(self.step_day)
+        self.note.todayRequested.connect(self.go_today)
 
         self.tray.toggleRequested.connect(self.toggle_note)
         self.tray.refreshRequested.connect(lambda: self.refresh(force=True))
@@ -65,7 +71,7 @@ class AppController(QObject):
         self.tray.aboutRequested.connect(self.show_about)
         self.tray.quitRequested.connect(self.quit)
 
-        self.scheduler.dayChanged.connect(lambda: self.refresh(force=True))
+        self.scheduler.dayChanged.connect(self._on_day_changed)
 
     # ---------------------------------------------------------------- 시작
 
@@ -105,9 +111,33 @@ class AppController(QObject):
         school = self._config.school
         self.tray.set_school_name(school.get("school_name", "") if school else "")
 
+    # ---------------------------------------------------------------- 날짜 이동
+
+    def step_day(self, delta: int) -> None:
+        target = self._view_day + timedelta(days=delta)
+        if abs((target - date.today()).days) > MAX_DAY_OFFSET:
+            return
+        self._view_day = target
+        self.refresh()
+
+    def go_today(self) -> None:
+        if self._view_day == date.today():
+            return
+        self._view_day = date.today()
+        self.refresh()
+
+    def _on_day_changed(self) -> None:
+        # 자정을 넘겼으면 무엇을 보고 있었든 오늘로 되돌린다
+        self._view_day = date.today()
+        self.refresh(force=True)
+
     # ---------------------------------------------------------------- 창 조작
 
     def show_note(self) -> None:
+        # 다시 꺼낼 때는 언제나 오늘부터 본다
+        if self._view_day != date.today():
+            self._view_day = date.today()
+            self.refresh()
         self.note.show()
         self.note.raise_()
         self.note.ensure_on_screen()
@@ -139,11 +169,9 @@ class AppController(QObject):
                 error=True,
             )
             return
-        if self._fetching:
-            return
 
         school = School.from_config(self._config.school or {})
-        day = date.today()
+        day = self._view_day
         cached = cache.load(school.school_code, day)
 
         # 같은 날 캐시가 있으면 호출하지 않는다. 트래픽 한도를 아끼는 핵심 규칙이다.
@@ -164,8 +192,12 @@ class AppController(QObject):
                 cached.get("schedule_rows", []),
                 footer="새로고침 중...",
             )
+        else:
+            self._show_message("불러오는 중...", "⏳", footer="")
 
-        self._fetching = True
+        if day in self._inflight:  # 같은 날을 두 번 부르지 않는다
+            return
+        self._inflight.add(day)
         meal_keys = list(self._config.display.get("meal_types", ["lunch"]))
         submit(
             self._client.fetch_day,
@@ -179,7 +211,7 @@ class AppController(QObject):
     def _on_fetched(
         self, school: School, day: date, result: tuple[list[dict], list[dict]]
     ) -> None:
-        self._fetching = False
+        self._inflight.discard(day)
         meal_rows, schedule_rows = result
         cache.save(school.school_code, day, meal_rows, schedule_rows)
 
@@ -188,18 +220,25 @@ class AppController(QObject):
         )
         self._config.save()
 
+        self.tray.set_error(False)
+        if day != self._view_day:
+            # 응답을 기다리는 사이 다른 날로 옮겨갔다. 화면은 건드리지 않는다.
+            return
+
         self._render_rows(
             day,
             meal_rows,
             schedule_rows,
             footer=f"{datetime.now():%H:%M} 갱신됨",
         )
-        self.tray.set_error(False)
 
     def _on_fetch_failed(self, school: School, day: date, error: Exception) -> None:
-        self._fetching = False
+        self._inflight.discard(day)
         kind = error.kind if isinstance(error, NeisError) else ResultKind.UNKNOWN
         log.info("조회 실패 (%s): %s", kind.value, error)
+        self.tray.set_error(True)
+        if day != self._view_day:
+            return
 
         cached = cache.load(school.school_code, day)
         if cached:
@@ -217,7 +256,6 @@ class AppController(QObject):
                 detail=str(error),
                 error=True,
             )
-        self.tray.set_error(True)
 
     # ---------------------------------------------------------------- 렌더링
 
@@ -239,16 +277,23 @@ class AppController(QObject):
             event for event in parse_schedule(schedule_rows) if event.applies_to(grade)
         ]
 
+        no_meal = (
+            "오늘은 급식이 없어요"
+            if day == date.today()
+            else "이 날은 급식이 없어요"
+        )
+
         if not meals and not events:
-            self._show_message("오늘은 급식이 없어요", "🌙", footer=footer)
+            self._show_message(no_meal, "🌙", footer=footer, day=day)
             return
 
         self.note.render_view(
             NoteView(
                 day=day,
+                is_today=day == date.today(),
                 meals=meals,
                 events=events,
-                meal_note="🌙 오늘은 급식이 없어요",
+                meal_note=f"🌙 {no_meal}",
                 footer=footer,
                 show_allergy=bool(display.get("show_allergy", False)),
                 show_calorie=bool(display.get("show_calorie", True)),
@@ -263,10 +308,18 @@ class AppController(QObject):
         detail: str = "",
         footer: str = "",
         error: bool = False,
+        day: date | None = None,
     ) -> None:
+        shown = day or self._view_day
         text = f"{message}\n{detail}" if detail else message
         self.note.render_view(
-            NoteView(day=date.today(), message=text, message_icon=icon, footer=footer)
+            NoteView(
+                day=shown,
+                is_today=shown == date.today(),
+                message=text,
+                message_icon=icon,
+                footer=footer,
+            )
         )
         if error:
             self.tray.set_error(True)

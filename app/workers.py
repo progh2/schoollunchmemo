@@ -34,11 +34,19 @@ class Task(QRunnable):
             result = self._fn(*self._args, **self._kwargs)
         except Exception as exc:  # noqa: BLE001 - 워커에서 예외가 새면 앱이 죽는다
             log.debug("작업 실패: %s", exc, exc_info=True)
-            self.signals.err.emit(exc)
+            self._emit(self.signals.err, exc)
         else:
-            self.signals.ok.emit(result)
+            self._emit(self.signals.ok, result)
         finally:
-            self.signals.done.emit()
+            self._emit(self.signals.done)
+
+    @staticmethod
+    def _emit(signal, *args) -> None:
+        """앱이 종료되는 중이면 수신 객체가 이미 사라졌을 수 있다."""
+        try:
+            signal.emit(*args)
+        except RuntimeError as exc:
+            log.debug("결과를 전달하지 못했습니다 (종료 중일 수 있음): %s", exc)
 
 
 # 실행 중인 작업의 참조를 붙잡아 둔다.

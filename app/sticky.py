@@ -29,6 +29,12 @@ from .resources.theme import colors
 NOTE_WIDTH = 280
 MAX_DISHES = 15
 _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
+_RELATIVE_LABELS = {-2: "그저께", -1: "어제", 0: "오늘", 1: "내일", 2: "모레"}
+
+
+def _relative_label(day: date) -> str:
+    """오늘 기준 며칠 차이인지. 멀리 떨어진 날은 날짜만으로 충분하다."""
+    return _RELATIVE_LABELS.get((day - date.today()).days, "")
 
 
 @dataclass
@@ -42,6 +48,7 @@ class NoteView:
     message_icon: str = "📌"
     meal_note: str = ""  # 급식만 없을 때 일정 위에 덧붙이는 한 줄
     footer: str = ""
+    is_today: bool = True
     show_allergy: bool = False
     show_calorie: bool = True
     show_origin: bool = False
@@ -53,6 +60,8 @@ class StickyNote(QWidget):
     hideRequested = Signal()
     quitRequested = Signal()
     positionChanged = Signal(int, int)
+    dateStepped = Signal(int)  # -1 = 이전 날, +1 = 다음 날
+    todayRequested = Signal()
 
     def __init__(self, color: str = "yellow", parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -91,10 +100,32 @@ class StickyNote(QWidget):
 
         header = QHBoxLayout()
         header.setSpacing(2)
+
+        self.prev_button = self._tool_button("‹", "이전 날 (휠을 굴려도 됩니다)")
+        self.prev_button.clicked.connect(lambda: self.dateStepped.emit(-1))
+        header.addWidget(self.prev_button)
+
         self.date_label = QLabel(self.card)
         self.date_label.setObjectName("date")
+        self.date_label.setTextFormat(Qt.TextFormat.RichText)
         header.addWidget(self.date_label)
+
+        self.next_button = self._tool_button("›", "다음 날")
+        self.next_button.clicked.connect(lambda: self.dateStepped.emit(1))
+        header.addWidget(self.next_button)
+
         header.addStretch(1)
+
+        # 다른 날을 보고 있을 때만 나타난다. 돌아올 길을 항상 열어둔다.
+        self.today_button = QPushButton("오늘", self.card)
+        self.today_button.setObjectName("chip")
+        self.today_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.today_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.today_button.setFlat(True)
+        self.today_button.setFixedHeight(22)
+        self.today_button.clicked.connect(self.todayRequested)
+        self.today_button.hide()
+        header.addWidget(self.today_button)
 
         self.refresh_button = self._tool_button("⟳", "지금 새로고침")
         self.refresh_button.clicked.connect(self.refreshRequested)
@@ -137,6 +168,8 @@ class StickyNote(QWidget):
         return button
 
     def _set_buttons_visible(self, visible: bool) -> None:
+        self.prev_button.setVisible(visible)
+        self.next_button.setVisible(visible)
         self.refresh_button.setVisible(visible)
         self.hide_button.setVisible(visible)
 
@@ -166,15 +199,34 @@ class StickyNote(QWidget):
                 font-size: 11pt;
             }}
             QPushButton#tool:hover {{ color: {palette['accent']}; }}
+            QPushButton#chip {{
+                color: {palette['accent']};
+                border: 1px solid {palette['line']};
+                border-radius: 9px;
+                background: transparent;
+                padding: 0 8px;
+                font-size: 8pt;
+            }}
+            QPushButton#chip:hover {{ border-color: {palette['accent']}; }}
             """
         )
 
     # -------------------------------------------------------------- 내용 렌더
 
     def render_view(self, view: NoteView) -> None:
-        self.date_label.setText(
-            f"{view.day.month}월 {view.day.day}일 ({_WEEKDAYS[view.day.weekday()]})"
+        palette = colors(self._color)
+        text = (
+            f"{view.day.month}월 {view.day.day}일 "
+            f"({_WEEKDAYS[view.day.weekday()]})"
         )
+        relative = _relative_label(view.day)
+        if relative and not view.is_today:
+            text += (
+                f"<span style='color:{palette['accent']}; font-size:9pt'>"
+                f" · {relative}</span>"
+            )
+        self.date_label.setText(text)
+        self.today_button.setVisible(not view.is_today)
         self.body.setText(self._build_html(view))
         self.footer_label.setText(view.footer)
         self.footer_label.setVisible(bool(view.footer))
@@ -327,8 +379,27 @@ class StickyNote(QWidget):
             self.positionChanged.emit(self.x(), self.y())
             event.accept()
 
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        # 위로 굴리면 과거, 아래로 굴리면 미래
+        delta = event.angleDelta().y()
+        if delta:
+            self.dateStepped.emit(-1 if delta > 0 else 1)
+            event.accept()
+
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         menu = QMenu(self)
+
+        previous = QAction("이전 날", menu)
+        previous.triggered.connect(lambda: self.dateStepped.emit(-1))
+        next_day = QAction("다음 날", menu)
+        next_day.triggered.connect(lambda: self.dateStepped.emit(1))
+        today = QAction("오늘로", menu)
+        today.triggered.connect(self.todayRequested)
+        menu.addAction(previous)
+        menu.addAction(next_day)
+        menu.addAction(today)
+        menu.addSeparator()
+
         refresh = QAction("지금 새로고침", menu)
         refresh.triggered.connect(self.refreshRequested)
         settings = QAction("설정...", menu)
