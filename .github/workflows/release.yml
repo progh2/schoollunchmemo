@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # 태그 없이도 빌드만 돌려볼 수 있게 한다 (릴리스는 만들지 않는다)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows 빌드
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # 깨진 빌드를 배포하지 않도록 여기서도 한 번 돌린다
+      - name: 테스트
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: 실행 파일 빌드
+        run: pyinstaller schoolnote.spec --noconfirm
+
+      - name: 산출물 확인 및 압축
+        shell: pwsh
+        run: |
+          $exe = "dist/SchoolNote/SchoolNote.exe"
+          if (-not (Test-Path $exe)) { throw "빌드 산출물이 없습니다: $exe" }
+
+          $version = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev" }
+          $asset = "SchoolNote-$version-windows-x64.zip"
+          Compress-Archive -Path "dist/SchoolNote/*" -DestinationPath $asset -Force
+
+          $mb = (Get-Item $asset).Length / 1MB
+          Write-Output ("압축 완료: {0} ({1:N1} MB)" -f $asset, $mb)
+          "ASSET=$asset" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schoolnote-windows
+          path: ${{ env.ASSET }}
+          retention-days: 14
+
+      - name: 릴리스 등록
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "${{ env.ASSET }}"
+          --title "학교쪽지 ${{ github.ref_name }}"
+          --generate-notes
