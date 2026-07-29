@@ -77,15 +77,17 @@ OS의 자격증명 저장소(Windows 자격 증명 관리자 / macOS 키체인 /
 PyInstaller로 OS별로 각각 빌드합니다. **크로스 빌드는 불가능**하며, 배포하려는 OS에서 직접 빌드해야 합니다.
 
 ```bash
-pip install pyinstaller
-pyinstaller schoolnote.spec
+pip install -r requirements-dev.txt
+pyinstaller schoolnote.spec --noconfirm
 ```
 
-| OS | 산출물 |
-| --- | --- |
-| Windows | `dist/SchoolNote/SchoolNote.exe` (+ NSIS 인스톨러) |
-| macOS | `dist/SchoolNote.app` (+ dmg) |
-| Linux | `dist/SchoolNote` (+ AppImage) |
+| OS | 산출물 | 상태 |
+| --- | --- | --- |
+| Windows | `dist/SchoolNote/SchoolNote.exe` | ✅ 빌드·실행 확인 (약 115MB) |
+| macOS | `dist/SchoolNote.app` | 미검증 |
+| Linux | `dist/SchoolNote` | 미검증 |
+
+쓰지 않는 Qt 모듈은 `schoolnote.spec`의 `EXCLUDES`에서 제외하고 있습니다.
 
 ---
 
@@ -94,21 +96,44 @@ pyinstaller schoolnote.spec
 ```
 project1/
 ├─ app/
-│  ├─ __main__.py          # 진입점, 단일 인스턴스 보장
+│  ├─ __main__.py          # 진입점, 단일 인스턴스 보장, 로깅
+│  ├─ controller.py        # 전체 흐름 조율 (조회 → 렌더 → 상태 표시)
 │  ├─ tray.py              # 트레이 아이콘과 메뉴
 │  ├─ sticky.py            # 포스트잇 위젯
 │  ├─ settings_dialog.py   # 설정 창 (인증키 / 학교 / 표시)
-│  ├─ config.py            # 설정 로드·저장
-│  ├─ secrets_store.py     # 인증키 보관 (keyring)
-│  ├─ scheduler.py         # 자정 갱신, 재시도
-│  ├─ neis/                # NEIS API 클라이언트·파서·모델
-│  └─ resources/           # 아이콘, 스타일시트
+│  ├─ config.py            # 설정 로드·저장, 경로 결정
+│  ├─ secrets_store.py     # 인증키 보관 (keyring + 폴백)
+│  ├─ cache.py             # 날짜 단위 응답 캐시
+│  ├─ scheduler.py         # 자정 롤오버 감지
+│  ├─ workers.py           # 백그라운드 작업 실행기
+│  ├─ neis/
+│  │  ├─ client.py         # HTTP 호출, 타임아웃, 재시도
+│  │  ├─ codes.py          # RESULT.CODE 분류
+│  │  ├─ models.py         # School / MealMenu / ScheduleEvent
+│  │  └─ parser.py         # 응답 정규화
+│  └─ resources/
+│     ├─ icons.py          # 아이콘을 코드로 그린다 (바이너리 없음)
+│     └─ theme.py          # 포스트잇 색상 팔레트
 ├─ docs/
 │  └─ PRD.md               # 제품 요구사항 명세서
 ├─ tests/
+│  ├─ test_parser.py       # 응답 파싱
+│  └─ test_ui_smoke.py     # offscreen 위젯 렌더
+├─ run.py                  # PyInstaller 진입 스크립트
+├─ schoolnote.spec         # PyInstaller 빌드 설정
 ├─ requirements.txt
+├─ requirements-dev.txt
 └─ README.md
 ```
+
+## 🧪 테스트
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+UI 테스트는 `QT_QPA_PLATFORM=offscreen` 으로 실행되므로 화면 없이도 돌아갑니다.
 
 ---
 
