@@ -1,0 +1,43 @@
+<html>
+  <head>
+    <style>
+        body{
+          ;
+        }
+        .post {
+          width:500px;
+          border:1px solid #eee;
+          margin:10px auto;
+        }
+      </style>
+    </head>
+    <body>
+      <div id="list">
+      </div>
+<script>
+  const students = [
+    {name: '홍길동1', phone:'010-123-1234'},
+    {name: '홍길동2', phone:'010-123-1234'},
+    {name: '홍길동3', phone:'010-123-1234'},    
+  ];
+  console.log(students);
+  students.forEach( s => {
+    const name = "이름 : " + s.name;
+    const phone = "전화번호 : " + s.phone;
+    const info = "이름: " + name + " / 전화번호: " + phone;
+    //console.log(info);
+    //document.getElementById("list").innerHTML += info + "<br>";
+
+    const url = "https://jsonplaceholder.typicode.com/posts";
+    fetch(url)
+      .then( response => response.json() )
+      .then( posts => {
+          posts.forEach( p => {
+            const post = "<div class=\"post\" id=\"post-"+p.id+"\"><b>" + p.title + "</b><br>" + p.body + "<br></div>";
+            document.getElementById("list").innerHTML += post;
+          });
+        } )
+  })
+</script>
+</body>
+</html>

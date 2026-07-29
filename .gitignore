@@ -1,0 +1,58 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+MANIFEST
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Build / packaging ----
+build/
+dist/
+*.manifest
+
+# ---- Test / lint / type-check caches ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---- IDE / editor ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- OS junk ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ---- 앱 로컬 데이터 (절대 커밋 금지) ----
+# NEIS 인증키, 선택한 학교, 응답 캐시가 들어있음
+config.json
+.env
+.env.*
+!.env.example
+*.local.json
+cache/
+logs/
+*.log

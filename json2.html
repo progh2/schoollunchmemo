@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posts Explorer</title>
+<style>
+  :root{
+    --bg:#f6f7fb;
+    --card:#ffffff;
+    --line:#e6e8f0;
+    --text:#1c2033;
+    --muted:#6b7189;
+    --accent:#4f46e5;
+    --accent-soft:#eef0ff;
+    --shadow:0 1px 2px rgba(16,20,40,.04), 0 8px 24px rgba(16,20,40,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1117;
+      --card:#171a23;
+      --line:#262b3a;
+      --text:#e8eaf2;
+      --muted:#9096ad;
+      --accent:#8b85ff;
+      --accent-soft:#20223a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","맑은 고딕",Roboto,sans-serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{max-width:880px;margin:0 auto;padding:40px 20px 80px}
+
+  /* ---------- 헤더 ---------- */
+  header h1{
+    font-size:28px;
+    letter-spacing:-.02em;
+    margin:0 0 6px;
+  }
+  header p{margin:0;color:var(--muted);font-size:14px}
+
+  .toolbar{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    margin:24px 0 18px;
+    flex-wrap:wrap;
+  }
+  .search{
+    flex:1 1 240px;
+    position:relative;
+  }
+  .search input{
+    width:100%;
+    padding:11px 14px 11px 38px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:var(--card);
+    color:var(--text);
+    font-size:14px;
+    font-family:inherit;
+    outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .search input:focus{
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  .search svg{
+    position:absolute;
+    left:13px; top:50%;
+    transform:translateY(-50%);
+    width:16px;height:16px;
+    stroke:var(--muted);
+    fill:none;stroke-width:2;
+  }
+  .count{
+    font-size:13px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
+  /* ---------- 목록 ---------- */
+  .list{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+  .item{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    width:100%;
+    padding:16px 20px;
+    border:0;
+    border-top:1px solid var(--line);
+    background:transparent;
+    color:inherit;
+    font:inherit;
+    text-align:left;
+    cursor:pointer;
+    transition:background .12s;
+  }
+  .item:first-child{border-top:0}
+  .item:hover{background:var(--accent-soft)}
+  .item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+  .num{
+    flex:none;
+    width:34px;
+    font-size:12px;
+    font-variant-numeric:tabular-nums;
+    color:var(--muted);
+  }
+  .item-body{flex:1;min-width:0}
+  .item-title{
+    display:block;
+    font-weight:600;
+    font-size:15px;
+    letter-spacing:-.01em;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .item-excerpt{
+    display:block;
+    font-size:13px;
+    color:var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .badge{
+    flex:none;
+    display:inline-block;
+    font-size:12px;
+    padding:3px 9px;
+    border-radius:999px;
+    background:var(--accent-soft);
+    color:var(--accent);
+    font-weight:600;
+    white-space:nowrap;
+  }
+  .chev{flex:none;width:16px;height:16px;stroke:var(--muted);fill:none;stroke-width:2}
+
+  .empty,.loading{
+    padding:40px 20px;
+    text-align:center;
+    color:var(--muted);
+    font-size:14px;
+  }
+  .error{
+    padding:20px;
+    border-radius:12px;
+    background:#fee2e2;
+    color:#991b1b;
+    font-size:14px;
+  }
+
+  /* ---------- 상세 모달 ---------- */
+  .overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(12,14,22,.5);
+    backdrop-filter:blur(3px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:10;
+    animation:fade .15s ease;
+  }
+  .overlay[hidden]{display:none}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+  .modal{
+    width:100%;
+    max-width:620px;
+    max-height:88vh;
+    overflow-y:auto;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    box-shadow:0 24px 60px rgba(0,0,0,.28);
+    animation:rise .2s ease;
+  }
+  .modal-head{
+    position:sticky;top:0;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    padding:22px 24px 16px;
+    background:var(--card);
+    border-bottom:1px solid var(--line);
+  }
+  .modal-head h2{
+    margin:6px 0 0;
+    font-size:19px;
+    letter-spacing:-.02em;
+    line-height:1.4;
+  }
+  .close{
+    flex:none;
+    width:32px;height:32px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:transparent;
+    color:var(--muted);
+    font-size:18px;
+    line-height:1;
+    cursor:pointer;
+    transition:background .12s,color .12s;
+  }
+  .close:hover{background:var(--accent-soft);color:var(--text)}
+
+  .modal-body{padding:20px 24px 26px}
+  .post-body{
+    font-size:15px;
+    color:var(--text);
+    white-space:pre-line;
+    margin:0 0 24px;
+  }
+
+  .section-label{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:10px;
+  }
+
+  .user-card{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px;
+    background:var(--bg);
+  }
+  .user-top{display:flex;align-items:center;gap:13px;margin-bottom:16px}
+  .avatar{
+    flex:none;
+    width:44px;height:44px;
+    border-radius:50%;
+    background:var(--accent);
+    color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:17px;
+  }
+  .user-name{font-weight:700;font-size:16px;letter-spacing:-.01em}
+  .user-sub{font-size:13px;color:var(--muted)}
+
+  .fields{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:12px 20px;
+    margin:0;
+  }
+  .field dt{
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    margin-bottom:2px;
+  }
+  .field dd{margin:0;font-size:14px;word-break:break-word}
+  .field a{color:var(--accent);text-decoration:none}
+  .field a:hover{text-decoration:underline}
+
+  .skeleton{
+    height:12px;
+    border-radius:6px;
+    background:linear-gradient(90deg,var(--line),var(--bg),var(--line));
+    background-size:200% 100%;
+    animation:shimmer 1.2s infinite;
+    margin-bottom:10px;
+  }
+  @keyframes shimmer{to{background-position:-200% 0}}
+
+  @media (max-width:520px){
+    .wrap{padding:28px 14px 60px}
+    .item{padding:14px}
+    .num{display:none}
+    .item-excerpt{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Posts Explorer</h1>
+    <p>JSONPlaceholder의 게시글 목록입니다. 제목을 클릭하면 본문과 작성자 정보를 볼 수 있습니다.</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="제목 · 본문 검색" autocomplete="off">
+    </div>
+    <div class="count" id="count"></div>
+  </div>
+
+  <div class="list" id="list">
+    <div class="loading">게시글을 불러오는 중…</div>
+  </div>
+</div>
+
+<!-- 상세 모달 -->
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <div class="modal-head">
+      <div>
+        <span class="badge" id="m-badge"></span>
+        <h2 id="m-title"></h2>
+      </div>
+      <button class="close" id="m-close" aria-label="닫기">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="post-body" id="m-body"></p>
+      <div class="section-label">작성자 정보</div>
+      <div id="m-user"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://jsonplaceholder.typicode.com';
+
+let posts = [];
+const userCache = new Map();   // userId -> user 객체 (같은 사용자 재요청 방지)
+
+const $list    = document.getElementById('list');
+const $count   = document.getElementById('count');
+const $q       = document.getElementById('q');
+const $overlay = document.getElementById('overlay');
+const $close   = document.getElementById('m-close');
+
+/* ---------- 유틸 ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* ---------- 게시글 목록 ---------- */
+async function loadPosts(){
+  try{
+    const res = await fetch(API + '/posts');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    posts = await res.json();
+    render();
+  }catch(err){
+    $list.innerHTML = '<div class="error">게시글을 불러오지 못했습니다: ' + esc(err.message) + '</div>';
+  }
+}
+
+function render(){
+  const kw = $q.value.trim().toLowerCase();
+  const rows = kw
+    ? posts.filter(p => (p.title + ' ' + p.body).toLowerCase().includes(kw))
+    : posts;
+
+  $count.textContent = rows.length + ' / ' + posts.length + '건';
+
+  if(!rows.length){
+    $list.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>';
+    return;
+  }
+
+  $list.innerHTML = rows.map(p => `
+    <button class="item" data-id="${p.id}">
+      <span class="num">#${p.id}</span>
+      <span class="item-body">
+        <span class="item-title">${esc(cap(p.title))}</span>
+        <span class="item-excerpt">${esc(p.body.replace(/\n/g, ' '))}</span>
+      </span>
+      <span class="badge">User ${p.userId}</span>
+      <svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`).join('');
+}
+
+/* ---------- 사용자 정보 ---------- */
+async function getUser(id){
+  if(userCache.has(id)) return userCache.get(id);
+  const res = await fetch(API + '/users/' + id);
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const user = await res.json();
+  userCache.set(id, user);
+  return user;
+}
+
+function userHTML(u){
+  const addr = `${u.address.suite}, ${u.address.street}, ${u.address.city} ${u.address.zipcode}`;
+  const site = /^https?:\/\//.test(u.website) ? u.website : 'http://' + u.website;
+  return `
+    <div class="user-card">
+      <div class="user-top">
+        <div class="avatar">${esc(u.name.charAt(0))}</div>
+        <div>
+          <div class="user-name">${esc(u.name)}</div>
+          <div class="user-sub">@${esc(u.username)} · User ID ${u.id}</div>
+        </div>
+      </div>
+      <dl class="fields">
+        <div class="field"><dt>이메일</dt><dd><a href="mailto:${esc(u.email)}">${esc(u.email)}</a></dd></div>
+        <div class="field"><dt>전화</dt><dd>${esc(u.phone)}</dd></div>
+        <div class="field"><dt>웹사이트</dt><dd><a href="${esc(site)}" target="_blank" rel="noopener">${esc(u.website)}</a></dd></div>
+        <div class="field"><dt>회사</dt><dd>${esc(u.company.name)}<br><span class="user-sub">${esc(u.company.catchPhrase)}</span></dd></div>
+        <div class="field" style="grid-column:1/-1"><dt>주소</dt><dd>${esc(addr)}</dd></div>
+      </dl>
+    </div>`;
+}
+
+/* ---------- 상세 열기 / 닫기 ---------- */
+async function openPost(id){
+  const p = posts.find(x => x.id === id);
+  if(!p) return;
+
+  document.getElementById('m-badge').textContent = 'POST #' + p.id;
+  document.getElementById('m-title').textContent = cap(p.title);
+  document.getElementById('m-body').textContent  = p.body;
+
+  const $user = document.getElementById('m-user');
+  $user.innerHTML = '<div class="user-card">' +
+                    '<div class="skeleton" style="width:40%"></div>' +
+                    '<div class="skeleton" style="width:70%"></div>' +
+                    '<div class="skeleton" style="width:55%;margin-bottom:0"></div></div>';
+
+  $overlay.hidden = false;
+  document.body.style.overflow = 'hidden';
+  $close.focus();
+
+  try{
+    const u = await getUser(p.userId);
+    $user.innerHTML = userHTML(u);
+  }catch(err){
+    $user.innerHTML = '<div class="error">사용자 정보를 불러오지 못했습니다: ' + esc(err.message) + '</div>';
+  }
+}
+
+function closePost(){
+  $overlay.hidden = true;
+  document.body.style.overflow = '';
+}
+
+/* ---------- 이벤트 ---------- */
+$list.addEventListener('click', e => {
+  const btn = e.target.closest('.item');
+  if(btn) openPost(Number(btn.dataset.id));
+});
+$q.addEventListener('input', render);
+$close.addEventListener('click', closePost);
+$overlay.addEventListener('click', e => { if(e.target === $overlay) closePost(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !$overlay.hidden) closePost(); });
+
+loadPosts();
+</script>
+</body>
+</html>
