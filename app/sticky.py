@@ -82,6 +82,7 @@ class StickyNote(QWidget):
     positionChanged = Signal(int, int)
     dateStepped = Signal(int)  # -1 = 이전 날, +1 = 다음 날
     todayRequested = Signal()
+    calendarRequested = Signal(QPoint)  # 달력을 펼칠 자리(전역 좌표)
 
     def __init__(self, color: str = "yellow", parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -134,6 +135,8 @@ class StickyNote(QWidget):
         self.date_label = QLabel(self.card)
         self.date_label.setObjectName("date")
         self.date_label.setTextFormat(Qt.TextFormat.RichText)
+        self.date_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.date_label.setToolTip("날짜를 눌러 달력에서 고르기")
         header.addWidget(self.date_label)
 
         self.next_button = self._tool_button("›", "다음 날")
@@ -608,19 +611,31 @@ class StickyNote(QWidget):
             return
         self._drag_offset = None
         moved = CLICK_SLOP + 1
-        if self._press_pos is not None:
-            moved = (
-                event.globalPosition().toPoint() - self._press_pos
-            ).manhattanLength()
+        pressed_at = self._press_pos
+        if pressed_at is not None:
+            moved = (event.globalPosition().toPoint() - pressed_at).manhattanLength()
         self._press_pos = None
 
         if moved <= CLICK_SLOP:
             # 끌지 않고 눌렀다 뗀 것은 클릭으로 본다
-            self.toggle_details()
+            if pressed_at is not None and self._on_date_label(pressed_at):
+                # 날짜를 눌렀으면 달력을 펼친다. 재료 펼침은 나머지 영역이다.
+                self.calendarRequested.emit(
+                    self.date_label.mapToGlobal(
+                        QPoint(0, self.date_label.height() + 4)
+                    )
+                )
+            else:
+                self.toggle_details()
         else:
             self.ensure_on_screen()
             self.positionChanged.emit(self.x(), self.y())
         event.accept()
+
+    def _on_date_label(self, global_pos: QPoint) -> bool:
+        return self.date_label.rect().contains(
+            self.date_label.mapFromGlobal(global_pos)
+        )
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         delta = event.angleDelta().y()
@@ -645,9 +660,16 @@ class StickyNote(QWidget):
         next_day.triggered.connect(lambda: self.dateStepped.emit(1))
         today = QAction("오늘로", menu)
         today.triggered.connect(self.todayRequested)
+        calendar = QAction("달력에서 고르기...", menu)
+        calendar.triggered.connect(
+            lambda: self.calendarRequested.emit(
+                self.date_label.mapToGlobal(QPoint(0, self.date_label.height() + 4))
+            )
+        )
         menu.addAction(previous)
         menu.addAction(next_day)
         menu.addAction(today)
+        menu.addAction(calendar)
         menu.addSeparator()
 
         refresh = QAction("지금 새로고침", menu)
