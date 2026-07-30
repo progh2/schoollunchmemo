@@ -342,6 +342,82 @@ def test_settings_dialog_restores_allergy_choices(qapp, monkeypatch):
         dialog.deleteLater()
 
 
+class TestAutostartCheckbox:
+    """자동 시작 체크박스는 OS에 실제로 등록된 상태를 따라야 한다."""
+
+    @pytest.fixture
+    def dialog_factory(self, qapp, monkeypatch):
+        from app import autostart, secrets_store
+        from app.settings_dialog import SettingsDialog
+
+        monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
+        monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
+        monkeypatch.setattr(secrets_store, "set_key", lambda key: None)
+        monkeypatch.setattr(Config, "save", lambda self: None)
+
+        calls: list[bool] = []
+        monkeypatch.setattr(
+            autostart, "set_enabled", lambda on: calls.append(on) or True
+        )
+
+        created = []
+
+        def make(enabled: bool, supported: bool = True):
+            monkeypatch.setattr(autostart, "is_supported", lambda: supported)
+            monkeypatch.setattr(autostart, "is_enabled", lambda: enabled)
+            config = Config()
+            # 학교가 없으면 저장할 때 확인 대화상자가 떠서 테스트가 멈춘다
+            config.school = {
+                "office_code": "B10",
+                "school_code": "7010084",
+                "school_name": "미림마이스터고등학교",
+            }
+            dialog = SettingsDialog(config)
+            created.append(dialog)
+            return dialog
+
+        yield make, calls
+        for dialog in created:
+            dialog.deleteLater()
+
+    def test_reflects_registered_state(self, dialog_factory):
+        make, _ = dialog_factory
+        assert make(True).boot_check.isChecked() is True
+        assert make(False).boot_check.isChecked() is False
+
+    def test_disabled_where_unsupported(self, dialog_factory):
+        make, _ = dialog_factory
+        assert not make(False, supported=False).boot_check.isEnabled()
+
+    def test_saving_without_changing_leaves_os_alone(self, dialog_factory):
+        make, calls = dialog_factory
+        dialog = make(False)
+        dialog._on_save()
+        assert calls == []  # 레지스트리를 괜히 건드리지 않는다
+
+    def test_turning_on_registers_and_records(self, dialog_factory):
+        make, calls = dialog_factory
+        dialog = make(False)
+        dialog.boot_check.setChecked(True)
+        dialog._on_save()
+        assert calls == [True]
+        assert dialog._config.display["start_on_boot"] is True
+
+    def test_failure_is_not_recorded_as_enabled(self, dialog_factory, monkeypatch):
+        from app import autostart
+
+        make, _ = dialog_factory
+        dialog = make(False)
+        monkeypatch.setattr(autostart, "set_enabled", lambda on: False)
+        monkeypatch.setattr(
+            "app.settings_dialog.QMessageBox.warning", lambda *a, **k: None
+        )
+        dialog.boot_check.setChecked(True)
+        dialog._on_save()
+        assert dialog._config.display["start_on_boot"] is False
+        assert dialog.boot_check.isChecked() is False
+
+
 def test_settings_dialog_blocks_search_without_key(qapp, monkeypatch):
     from app import secrets_store
     from app.settings_dialog import SettingsDialog

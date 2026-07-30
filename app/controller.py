@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from . import APP_DISPLAY_NAME, VERSION, cache, secrets_store
+from . import APP_DISPLAY_NAME, VERSION, autostart, cache, secrets_store
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
 from .neis.models import MealMenu, School, ScheduleEvent
@@ -78,6 +78,7 @@ class AppController(QObject):
     def start(self) -> None:
         cache.prune()
         self._apply_display()
+        self._sync_autostart()
 
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.show()
@@ -100,6 +101,19 @@ class AppController(QObject):
 
     def _is_ready(self) -> bool:
         return bool(secrets_store.get_key()) and self._config.is_configured
+
+    def _sync_autostart(self) -> None:
+        """설정과 OS의 자동 시작 등록을 맞춘다.
+
+        실행 파일을 옮겼거나 다른 도구가 항목을 지웠을 수 있으므로
+        실행할 때마다 확인한다. 이미 맞으면 아무것도 쓰지 않는다.
+        """
+        if not autostart.is_supported():
+            return
+        if not autostart.set_enabled(
+            bool(self._config.display.get("start_on_boot", False))
+        ):
+            log.info("자동 시작 상태를 맞추지 못했습니다.")
 
     def _apply_display(self) -> None:
         display = self._config.display
