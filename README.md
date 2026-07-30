@@ -20,6 +20,7 @@
 - **어제·내일도 확인** — 마우스 휠을 굴리거나 `‹ ›` 버튼으로 날짜를 넘깁니다. 한 번 본 날은 캐시에서 바로 뜹니다.
 - **알레르기 경고** — 설정에 등록한 알레르기가 들어간 음식은 재료까지 빨갛게 표시됩니다.
 - **재료는 접어둡니다** — 평소엔 메뉴만, 포스트잇을 클릭하면 원산지·영양 정보가 펼쳐집니다.
+- **켜면 알아서 뜹니다** — 설정에서 자동 시작을 켜두면 컴퓨터를 켤 때 함께 실행됩니다.
 - **학교 검색** — 학교 이름 일부만 입력하면 목록에서 골라 설정할 수 있습니다.
 - **인증키 검증 버튼** — 키를 붙여넣고 **[키 확인]** 한 번이면 맞는지 바로 알려줍니다.
 - **크로스플랫폼** — Windows / macOS / Linux
@@ -34,12 +35,35 @@
 - Python 3.12 이상
 - NEIS 개방포털 인증키 (무료, 아래 안내 참조)
 
-### 개발 환경 실행
+### 간편 실행
+
+가상환경을 만들고 패키지를 채운 뒤 앱까지 띄워 주는 스크립트가 있습니다.
+두 번째 실행부터는 확인만 하고 바로 뜹니다.
 
 ```bash
 git clone <저장소 주소>
 cd project1
+```
 
+**Windows** — `run.bat` 을 두 번 클릭하면 됩니다.
+
+```bat
+run.bat             :: 트레이에 조용히 띄운다
+run.bat --console   :: 콘솔을 열어 로그를 함께 본다
+```
+
+**macOS / Linux**
+
+```bash
+./run.sh                # 터미널에 붙여서 실행 (Ctrl+C로 종료)
+./run.sh --background   # 터미널을 닫아도 계속 돌게 띄운다
+```
+
+첫 실행 시 설정 창이 자동으로 열립니다.
+
+### 직접 실행
+
+```bash
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
@@ -49,8 +73,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python -m app
 ```
-
-첫 실행 시 설정 창이 자동으로 열립니다.
 
 ---
 
@@ -106,6 +128,7 @@ project1/
 │  ├─ settings_dialog.py   # 설정 창 (인증키 / 학교 / 표시)
 │  ├─ config.py            # 설정 로드·저장, 경로 결정
 │  ├─ secrets_store.py     # 인증키 보관 (keyring + 폴백)
+│  ├─ autostart.py         # 부팅 시 자동 시작 등록 (OS별)
 │  ├─ cache.py             # 날짜 단위 응답 캐시
 │  ├─ allergens.py         # 알레르기 19종 표준 코드와 낱말 매칭
 │  ├─ scheduler.py         # 자정 롤오버 감지
@@ -125,8 +148,11 @@ project1/
 │  ├─ test_allergens.py    # 알레르기 매칭
 │  ├─ test_config.py       # 설정 병합·마이그레이션
 │  ├─ test_ui_smoke.py     # offscreen 위젯 렌더
-│  └─ test_day_navigation.py  # 날짜 이동
+│  ├─ test_day_navigation.py  # 날짜 이동
+│  └─ test_autostart.py    # 자동 시작 등록
 ├─ sandbox/                # 본체와 무관한 연습 파일
+├─ run.bat                 # Windows 실행 스크립트 (ANSI/CP949로 저장)
+├─ run.sh                  # macOS / Linux 실행 스크립트
 ├─ run.py                  # PyInstaller 진입 스크립트
 ├─ schoolnote.spec         # PyInstaller 빌드 설정
 ├─ requirements.txt

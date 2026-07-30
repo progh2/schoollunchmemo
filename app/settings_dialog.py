@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_DISPLAY_NAME, NEIS_PORTAL_URL
-from . import secrets_store
+from . import autostart, secrets_store
 from .allergens import ALLERGENS
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
@@ -360,10 +360,21 @@ class SettingsDialog(QDialog):
         window_form.addRow("불투명도", opacity_row)
 
         self.on_top_check = QCheckBox("항상 위에 표시", window_group)
-        self.show_on_start_check = QCheckBox("시작할 때 포스트잇 보이기", window_group)
         window_form.addRow(self.on_top_check)
-        window_form.addRow(self.show_on_start_check)
         layout.addWidget(window_group)
+
+        start_group = QGroupBox("시작", tab)
+        start_form = QFormLayout(start_group)
+        self.boot_check = QCheckBox("컴퓨터를 켤 때 자동 실행", start_group)
+        self.show_on_start_check = QCheckBox("시작할 때 포스트잇 보이기", start_group)
+        start_form.addRow(self.boot_check)
+        start_form.addRow(self.show_on_start_check)
+        if not autostart.is_supported():
+            self.boot_check.setEnabled(False)
+            self.boot_check.setToolTip(
+                "이 환경에서는 자동 시작을 등록할 수 없습니다."
+            )
+        layout.addWidget(start_group)
 
         layout.addStretch(1)
         return tab
@@ -442,6 +453,15 @@ class SettingsDialog(QDialog):
         self.on_top_check.setChecked(bool(display.get("always_on_top", True)))
         self.show_on_start_check.setChecked(bool(display.get("show_on_start", True)))
 
+        # 자동 시작은 설정 파일이 아니라 OS에 등록된 실제 상태를 보여준다.
+        # 사용자가 작업 관리자에서 껐을 수도 있다.
+        self._boot_initial = (
+            autostart.is_enabled()
+            if autostart.is_supported()
+            else bool(display.get("start_on_boot", False))
+        )
+        self.boot_check.setChecked(self._boot_initial)
+
         self._refresh_selected_label()
         self._update_search_enabled()
         if self._selected is None:
@@ -480,12 +500,34 @@ class SettingsDialog(QDialog):
         display["opacity"] = self.opacity_slider.value() / 100
         display["always_on_top"] = self.on_top_check.isChecked()
         display["show_on_start"] = self.show_on_start_check.isChecked()
+        display["start_on_boot"] = self._apply_autostart()
 
         self._config.school = self._selected.to_config() if self._selected else None
         self._config.save()
 
         self.saved.emit()
         self.accept()
+
+    def _apply_autostart(self) -> bool:
+        """자동 시작을 실제로 등록하거나 해제하고, 설정에 남길 값을 돌려준다.
+
+        고르지 않은 채 저장만 반복하는 경우에 레지스트리를 건드리지 않도록
+        바뀐 때만 손을 댄다. 실패했으면 설정에도 켜졌다고 적지 않는다.
+        """
+        wanted = self.boot_check.isChecked()
+        if wanted == self._boot_initial:
+            return wanted
+        if autostart.set_enabled(wanted):
+            self._boot_initial = wanted
+            return wanted
+
+        QMessageBox.warning(
+            self,
+            "자동 시작을 바꾸지 못했습니다",
+            "자동 시작 등록에 실패했습니다. 다른 설정은 그대로 저장됩니다.",
+        )
+        self.boot_check.setChecked(self._boot_initial)
+        return self._boot_initial
 
     # ------------------------------------------------------------------ 유틸
 

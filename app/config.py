@@ -18,7 +18,7 @@ from . import APP_NAME
 
 log = logging.getLogger(__name__)
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 
 DEFAULTS: dict[str, Any] = {
     "version": CONFIG_VERSION,
@@ -117,10 +117,17 @@ class Config:
     @staticmethod
     def _migrate(raw: dict[str, Any]) -> dict[str, Any]:
         """설정 스키마 마이그레이션."""
+        version = raw.get("version", 1)
         display = raw.get("display")
-        if isinstance(display, dict) and "show_origin" in display:
-            # 원산지는 켜고 끄는 항목에서 접었다 펴는 항목이 되었다
-            display.setdefault("expand_details", bool(display.pop("show_origin")))
+
+        if isinstance(display, dict) and version < 2:
+            # v1은 구버전 show_origin(원산지를 표시할지)을 그대로
+            # expand_details(처음부터 펼쳐 둘지)로 옮겼는데, 뜻이 다른 값이다.
+            # 원산지를 보려고 켜 두었던 사람이 전부 펼친 채로 시작하게 됐다.
+            # 새 UI는 클릭하면 원산지를 보여주므로 펼침은 기본값으로 되돌린다.
+            display.pop("show_origin", None)
+            display.pop("expand_details", None)
+
         raw["version"] = CONFIG_VERSION
         return raw
 
