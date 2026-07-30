@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # ---------------------------------------------------------------------------
-# 학교쪽지 실행 스크립트 (macOS / Linux)
+# 급식쪽지 실행 스크립트 (macOS / Linux)
 #
 # 가상환경이 없으면 만들고, 패키지가 빠져 있으면 채운 뒤 앱을 띄운다.
 # 두 번째 실행부터는 확인만 하고 바로 뜬다.
@@ -46,13 +46,13 @@ if [ ! -x "$PY" ]; then
         esac
         exit 1
     fi
-    echo "[학교쪽지] 가상환경을 만듭니다 (.venv)..."
+    echo "[급식쪽지] 가상환경을 만듭니다 (.venv)..."
     "$base" -m venv .venv
 fi
 
 # 필요한 패키지가 다 있는지 먼저 확인한다. 매번 pip을 돌리면 실행이 느려진다.
 if ! "$PY" -c "$PROBE" >/dev/null 2>&1; then
-    echo "[학교쪽지] 필요한 패키지를 설치합니다. 처음에는 몇 분 걸립니다..."
+    echo "[급식쪽지] 필요한 패키지를 설치합니다. 처음에는 몇 분 걸립니다..."
     "$PY" -m pip install --upgrade pip >/dev/null
     "$PY" -m pip install -r requirements.txt
 
@@ -71,7 +71,7 @@ fi
 if [ "$BACKGROUND" = "1" ]; then
     # 로그는 앱이 알아서 파일로 남기므로 표준 출력은 버린다
     nohup "$PY" run.py "$@" >/dev/null 2>&1 &
-    echo "[학교쪽지] 백그라운드에서 실행했습니다 (PID $!). 종료는 트레이 메뉴에서."
+    echo "[급식쪽지] 백그라운드에서 실행했습니다 (PID $!). 종료는 트레이 메뉴에서."
     exit 0
 fi
 

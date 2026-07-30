@@ -64,5 +64,5 @@ jobs:
         run: >
           gh release create "${{ github.ref_name }}"
           "${{ env.ASSET }}"
-          --title "학교쪽지 ${{ github.ref_name }}"
+          --title "급식쪽지 ${{ github.ref_name }}"
           --generate-notes

@@ -1,6 +1,6 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM 학교쪽지 실행 스크립트 (Windows)
+REM 급식쪽지 실행 스크립트 (Windows)
 REM
 REM 이 파일을 두 번 클릭하면 된다. 가상환경이 없으면 만들고, 패키지가
 REM 빠져 있으면 채운 뒤 앱을 띄운다. 두 번째 실행부터는 확인만 하고 바로 뜬다.
@@ -25,7 +25,7 @@ if /i "%~1"=="--console" set "CONSOLE=1"
 if /i "%~1"=="-c" set "CONSOLE=1"
 
 if not exist "%PY%" (
-    echo [학교쪽지] 가상환경을 만듭니다 ^(.venv^)...
+    echo [급식쪽지] 가상환경을 만듭니다 ^(.venv^)...
     call :find_python
     if not defined LAUNCHER goto :no_python
     %LAUNCHER% -m venv .venv
@@ -35,7 +35,7 @@ if not exist "%PY%" (
 REM 필요한 패키지가 다 있는지 먼저 확인한다. 매번 pip을 돌리면 실행이 느려진다.
 "%PY%" -c "%PROBE%" >nul 2>&1
 if errorlevel 1 (
-    echo [학교쪽지] 필요한 패키지를 설치합니다. 처음에는 몇 분 걸립니다...
+    echo [급식쪽지] 필요한 패키지를 설치합니다. 처음에는 몇 분 걸립니다...
     "%PY%" -m pip install --upgrade pip >nul 2>&1
     "%PY%" -m pip install -r requirements.txt
     if errorlevel 1 goto :pip_failed
@@ -44,7 +44,7 @@ if errorlevel 1 (
 )
 
 if defined CONSOLE (
-    echo [학교쪽지] 실행합니다. 이 창을 닫으면 앱도 종료됩니다.
+    echo [급식쪽지] 실행합니다. 이 창을 닫으면 앱도 종료됩니다.
     "%PY%" run.py
     goto :done
 )

@@ -115,6 +115,6 @@ if sys.platform == "darwin":
         info_plist={
             # 메뉴바 앱이므로 Dock에 띄우지 않는다
             "LSUIElement": True,
-            "CFBundleDisplayName": "학교쪽지",
+            "CFBundleDisplayName": "급식쪽지",
         },
     )
