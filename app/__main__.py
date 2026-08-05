@@ -24,6 +24,50 @@ _SERVER_NAME = "SchoolNote.singleton"
 log = logging.getLogger(__name__)
 
 
+def _fix_macos_app_name(name: str) -> None:
+    """macOS 메뉴바에 표시되는 앱 이름을 'python' 대신 실제 이름으로 바꾼다.
+
+    개발 실행 시 Python 인터프리터 번들의 CFBundleName이 그대로 노출되는 문제를 해결한다.
+    패키징된 .app은 Info.plist로 처리되므로 이 함수는 무해하게 덮어쓴다.
+    """
+    try:
+        import ctypes
+        import ctypes.util
+
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+
+        GetClass = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p)(
+            ("objc_getClass", objc)
+        )
+        RegSel = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p)(
+            ("sel_registerName", objc)
+        )
+        Send0 = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(
+            ("objc_msgSend", objc)
+        )
+        Send1s = ctypes.CFUNCTYPE(
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p
+        )(("objc_msgSend", objc))
+        Send2 = ctypes.CFUNCTYPE(
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        )(("objc_msgSend", objc))
+
+        bundle = Send0(GetClass(b"NSBundle"), RegSel(b"mainBundle"))
+        info = Send0(bundle, RegSel(b"infoDictionary"))
+        ns_str = GetClass(b"NSString")
+        key = Send1s(ns_str, RegSel(b"stringWithUTF8String:"), b"CFBundleName")
+        val = Send1s(
+            ns_str, RegSel(b"stringWithUTF8String:"), name.encode("utf-8")
+        )
+        Send2(info, RegSel(b"setValue:forKey:"), val, key)
+    except Exception as exc:
+        log.debug("macOS 앱 이름 설정 실패: %s", exc)
+
+
 def _setup_logging() -> None:
     log_dir = Path(data_dir()) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +105,9 @@ def _claim_single_instance() -> QLocalServer | None:
 
 
 def main() -> int:
+    if sys.platform == "darwin":
+        _fix_macos_app_name(APP_DISPLAY_NAME)
+
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setApplicationVersion("0.1.0")
 
