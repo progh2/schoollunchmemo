@@ -68,6 +68,39 @@ def _fix_macos_app_name(name: str) -> None:
         log.debug("macOS 앱 이름 설정 실패: %s", exc)
 
 
+def _hide_from_dock() -> None:
+    """개발 실행 시 Dock에서 Python 아이콘을 숨긴다.
+
+    패키징된 .app은 Info.plist의 LSUIElement=True로 처리되고,
+    개발 모드에서는 이 함수가 동일한 효과를 낸다.
+    NSApplicationActivationPolicyAccessory = 1
+    """
+    try:
+        import ctypes
+        import ctypes.util
+
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+
+        GetClass = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p)(
+            ("objc_getClass", objc)
+        )
+        RegSel = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p)(
+            ("sel_registerName", objc)
+        )
+        Send0 = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(
+            ("objc_msgSend", objc)
+        )
+        Send1i = ctypes.CFUNCTYPE(
+            ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long
+        )(("objc_msgSend", objc))
+
+        ns_app = GetClass(b"NSApplication")
+        shared = Send0(ns_app, RegSel(b"sharedApplication"))
+        Send1i(shared, RegSel(b"setActivationPolicy:"), 1)
+    except Exception as exc:
+        log.debug("macOS Dock 숨기기 실패: %s", exc)
+
+
 def _setup_logging() -> None:
     log_dir = Path(data_dir()) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +149,9 @@ def main() -> int:
     app.setWindowIcon(app_icon())
     # 포스트잇을 닫아도 앱은 트레이에 살아 있어야 한다
     app.setQuitOnLastWindowClosed(False)
+
+    if sys.platform == "darwin":
+        _hide_from_dock()
 
     _setup_logging()
 
