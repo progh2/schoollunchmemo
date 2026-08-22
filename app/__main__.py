@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import signal
 import sys
 from pathlib import Path
 
@@ -138,6 +139,10 @@ def _claim_single_instance() -> QLocalServer | None:
 
 
 def main() -> int:
+    # Qt 이벤트 루프가 SIGINT를 소비하지 않도록 기본 핸들러로 복원한다.
+    # 이렇게 해야 터미널에서 Ctrl+C로 앱을 종료할 수 있다.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
     if sys.platform == "darwin":
         _fix_macos_app_name(APP_DISPLAY_NAME)
 

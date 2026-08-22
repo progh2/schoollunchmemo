@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 
+import sys
+
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
@@ -93,11 +95,12 @@ class StickyNote(QWidget):
         self._view: NoteView | None = None
         self._screen_hooked = False
 
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool  # 작업표시줄·Alt+Tab에 뜨지 않게
-            | Qt.WindowType.WindowStaysOnTopHint
-        )
+        # macOS에서 Tool 플래그는 앱 포커스를 잃으면 창을 자동으로 숨긴다.
+        # Windows에서는 Tool이 작업표시줄·Alt+Tab 제외 역할만 하므로 유지한다.
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        if sys.platform != "darwin":
+            flags |= Qt.WindowType.Tool
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedWidth(NOTE_WIDTH)
 
