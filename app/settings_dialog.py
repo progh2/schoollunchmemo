@@ -359,6 +359,17 @@ class SettingsDialog(QDialog):
         opacity_row.addWidget(self.opacity_value)
         window_form.addRow("불투명도", opacity_row)
 
+        font_size_row = QHBoxLayout()
+        self.font_size_slider = QSlider(Qt.Orientation.Horizontal, window_group)
+        self.font_size_slider.setRange(8, 16)
+        self.font_size_value = QLabel("", window_group)
+        self.font_size_slider.valueChanged.connect(
+            lambda v: self.font_size_value.setText(f"{v}pt")
+        )
+        font_size_row.addWidget(self.font_size_slider, 1)
+        font_size_row.addWidget(self.font_size_value)
+        window_form.addRow("글자 크기", font_size_row)
+
         self.on_top_check = QCheckBox("항상 위에 표시", window_group)
         window_form.addRow(self.on_top_check)
         layout.addWidget(window_group)
@@ -450,6 +461,8 @@ class SettingsDialog(QDialog):
         self.color_combo.setCurrentIndex(max(0, color_index))
         self.opacity_slider.setValue(int(float(display.get("opacity", 0.95)) * 100))
         self.opacity_value.setText(f"{self.opacity_slider.value()}%")
+        self.font_size_slider.setValue(int(display.get("font_size", 10)))
+        self.font_size_value.setText(f"{self.font_size_slider.value()}pt")
         self.on_top_check.setChecked(bool(display.get("always_on_top", True)))
         self.show_on_start_check.setChecked(bool(display.get("show_on_start", True)))
 
@@ -498,6 +511,7 @@ class SettingsDialog(QDialog):
         )
         display["color"] = self.color_combo.currentData()
         display["opacity"] = self.opacity_slider.value() / 100
+        display["font_size"] = self.font_size_slider.value()
         display["always_on_top"] = self.on_top_check.isChecked()
         display["show_on_start"] = self.show_on_start_check.isChecked()
         display["start_on_boot"] = self._apply_autostart()

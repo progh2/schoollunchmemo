@@ -88,6 +88,7 @@ class StickyNote(QWidget):
     def __init__(self, color: str = "yellow", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._color = color
+        self._font_size = 10
         self._drag_offset: QPoint | None = None
         self._press_pos: QPoint | None = None
         self._details_open = False  # 재료·원산지 펼침 여부
@@ -160,6 +161,10 @@ class StickyNote(QWidget):
         self.refresh_button.clicked.connect(self.refreshRequested)
         header.addWidget(self.refresh_button)
 
+        self.settings_button = self._tool_button("⚙", "설정")
+        self.settings_button.clicked.connect(self.settingsRequested)
+        header.addWidget(self.settings_button)
+
         self.hide_button = self._tool_button("✕", "숨기기 (트레이에 남아 있어요)")
         self.hide_button.clicked.connect(self.hideRequested)
         header.addWidget(self.hide_button)
@@ -223,11 +228,20 @@ class StickyNote(QWidget):
         self.prev_button.setVisible(visible)
         self.next_button.setVisible(visible)
         self.refresh_button.setVisible(visible)
+        self.settings_button.setVisible(visible)
         self.hide_button.setVisible(visible)
+
+    def set_font_size(self, size: int) -> None:
+        self._font_size = max(8, min(16, size))
+        self.apply_color(self._color)
+        if self._view is not None:
+            self.render_view(self._view)
 
     def apply_color(self, color: str) -> None:
         self._color = color
         palette = colors(color)
+        fs = self._font_size
+        fs_sm = max(8, fs - 2)
         self.card.setStyleSheet(
             f"""
             QFrame#card {{
@@ -238,13 +252,13 @@ class StickyNote(QWidget):
             }}
             QLabel#date {{
                 color: {palette['text']};
-                font-size: 11pt;
+                font-size: {fs + 1}pt;
                 font-weight: 600;
             }}
             QFrame#rule {{ background: {palette['line']}; border: none; }}
             QLabel#body {{
                 color: {palette['text']};
-                font-size: 10pt;
+                font-size: {fs}pt;
                 background: transparent;
             }}
             QScrollArea#scroll {{ background: transparent; border: none; }}
@@ -265,12 +279,12 @@ class StickyNote(QWidget):
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
                 background: transparent;
             }}
-            QLabel#footer {{ color: {palette['muted']}; font-size: 8pt; }}
+            QLabel#footer {{ color: {palette['muted']}; font-size: {fs_sm}pt; }}
             QPushButton#tool {{
                 color: {palette['muted']};
                 border: none;
                 background: transparent;
-                font-size: 11pt;
+                font-size: {fs + 1}pt;
             }}
             QPushButton#tool:hover {{ color: {palette['accent']}; }}
             QPushButton#chip {{
@@ -279,7 +293,7 @@ class StickyNote(QWidget):
                 border-radius: 9px;
                 background: transparent;
                 padding: 0 8px;
-                font-size: 8pt;
+                font-size: {fs_sm}pt;
             }}
             QPushButton#chip:hover {{ border-color: {palette['accent']}; }}
             """
@@ -399,11 +413,13 @@ class StickyNote(QWidget):
 
     def _build_html(self, view: NoteView) -> str:
         palette = colors(self._color)
+        fs = self._font_size
+        fs_sm = max(7, fs - 2)
         blocks: list[str] = []
 
         if view.message:
             blocks.append(
-                f"<p style='margin:8px 0 4px 0; font-size:14pt'>"
+                f"<p style='margin:8px 0 4px 0; font-size:{fs + 4}pt'>"
                 f"{escape(view.message_icon)}</p>"
                 f"<p style='margin:0; color:{palette['text']}'>"
                 f"{escape(view.message)}</p>"
@@ -411,14 +427,14 @@ class StickyNote(QWidget):
             return "".join(blocks)
 
         for meal in view.meals:
-            blocks.append(self._meal_html(meal, view, palette))
+            blocks.append(self._meal_html(meal, view, palette, fs, fs_sm))
 
         if self._has_details:
             hint = (
                 "재료·원산지 숨기기 ▴" if self._details_open else "재료·원산지 보기 ▾"
             )
             blocks.append(
-                f"<p style='margin:4px 0 0 0; font-size:8pt;"
+                f"<p style='margin:4px 0 0 0; font-size:{fs_sm}pt;"
                 f" color:{palette['muted']}'>{hint}</p>"
             )
 
@@ -452,7 +468,12 @@ class StickyNote(QWidget):
         return "".join(blocks)
 
     def _meal_html(
-        self, meal: MealMenu, view: NoteView, palette: dict[str, str]
+        self,
+        meal: MealMenu,
+        view: NoteView,
+        palette: dict[str, str],
+        fs: int,
+        fs_sm: int,
     ) -> str:
         alerts = set(view.allergy_alerts)
         parts = [
@@ -462,7 +483,7 @@ class StickyNote(QWidget):
         for dish in meal.dishes[:MAX_DISHES]:
             parts.append(
                 f"<p style='margin:0 0 1px 0'>"
-                f"{self._dish_html(dish, view, palette, alerts)}</p>"
+                f"{self._dish_html(dish, view, palette, alerts, fs_sm)}</p>"
             )
         if len(meal.dishes) > MAX_DISHES:
             parts.append(
@@ -475,7 +496,7 @@ class StickyNote(QWidget):
                 f"{meal.calorie:g} kcal</p>"
             )
         if self._details_open:
-            parts.append(self._details_html(meal, palette, alerts))
+            parts.append(self._details_html(meal, palette, alerts, fs_sm))
         return "".join(parts)
 
     def _dish_html(
@@ -484,25 +505,25 @@ class StickyNote(QWidget):
         view: NoteView,
         palette: dict[str, str],
         alerts: set[int],
+        fs_sm: int,
     ) -> str:
         hits = allergens.matched(dish.allergens, alerts)
         name = escape(dish.name)
         if hits:
-            # 내 알레르기와 겹치는 음식은 빨갛게, 무엇 때문인지도 함께
             return (
                 f"<span style='color:{DANGER_COLOR}; font-weight:600'>{name}</span>"
-                f"<span style='color:{DANGER_COLOR}; font-size:8pt'>"
+                f"<span style='color:{DANGER_COLOR}; font-size:{fs_sm}pt'>"
                 f" · {escape(allergens.labels(hits))}</span>"
             )
         if view.show_allergy and dish.allergens:
             return (
-                f"{name}<span style='color:{palette['muted']}; font-size:8pt'>"
+                f"{name}<span style='color:{palette['muted']}; font-size:{fs_sm}pt'>"
                 f" ({'.'.join(dish.allergens)})</span>"
             )
         return name
 
     def _details_html(
-        self, meal: MealMenu, palette: dict[str, str], alerts: set[int]
+        self, meal: MealMenu, palette: dict[str, str], alerts: set[int], fs_sm: int
     ) -> str:
         sections: list[str] = []
         for title, text in (("원산지", meal.origin), ("영양", meal.nutrition)):
@@ -510,7 +531,7 @@ class StickyNote(QWidget):
                 continue
             body = allergens.highlight_html(escape(text), alerts, DANGER_COLOR)
             sections.append(
-                f"<p style='margin:4px 0 0 0; font-size:8pt;"
+                f"<p style='margin:4px 0 0 0; font-size:{fs_sm}pt;"
                 f" color:{palette['muted']}'>"
                 f"<b>{title}</b><br/>{body.replace(chr(10), '<br/>')}</p>"
             )

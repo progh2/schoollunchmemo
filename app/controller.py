@@ -120,6 +120,7 @@ class AppController(QObject):
         color = display.get("color", "yellow")
         self.note.apply_color(color)
         self.note.setWindowOpacity(float(display.get("opacity", 0.95)))
+        self.note.set_font_size(int(display.get("font_size", 10)))
         self.note.set_always_on_top(bool(display.get("always_on_top", True)))
         self.note.set_details_default(bool(display.get("expand_details", False)))
         self.tray.set_color(color)
