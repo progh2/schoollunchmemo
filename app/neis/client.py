@@ -1,7 +1,7 @@
 """NEIS Open API HTTP 클라이언트.
 
-- 모든 호출은 워커 스레드에서 실행되는 것을 전제로 한다 (내부에서 sleep 한다).
-- 로그에는 인증키를 절대 남기지 않는다.
+인증키 없이 공개 API를 호출한다 (일 1000건 제한).
+모든 호출은 워커 스레드에서 실행되는 것을 전제로 한다 (내부에서 sleep 한다).
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 
 import requests
 
@@ -45,27 +45,15 @@ class NeisError(Exception):
         return str(self)
 
 
-def _mask(params: dict[str, Any]) -> dict[str, Any]:
-    """로그용. 인증키를 지운다."""
-    return {k: ("***" if k == "KEY" else v) for k, v in params.items()}
-
-
 class NeisClient:
-    def __init__(self, key_provider: Callable[[], str]) -> None:
-        self._key_provider = key_provider
+    def __init__(self) -> None:
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "SchoolNote/0.1 (+desktop widget)"
 
     # ------------------------------------------------------------ 저수준
 
     def _request(self, service: str, params: dict[str, Any]) -> list[dict]:
-        key = (self._key_provider() or "").strip()
-
-        # 키가 없으면 KEY 파라미터를 생략한다.
-        # NEIS API는 키 없이도 일 1000건 한도로 동작한다.
         query: dict[str, Any] = {"Type": "json", "pIndex": 1, "pSize": 100, **params}
-        if key:
-            query["KEY"] = key
         url = f"{BASE_URL}/{service}"
 
         last_error: NeisError | None = None
@@ -73,7 +61,7 @@ class NeisClient:
             if attempt:
                 time.sleep(BACKOFF_SECONDS[min(attempt - 1, len(BACKOFF_SECONDS) - 1)])
             try:
-                log.debug("GET %s %s", url, _mask(query))
+                log.debug("GET %s %s", url, query)
                 response = self._session.get(
                     url, params=query, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT)
                 )
@@ -109,10 +97,6 @@ class NeisClient:
         raise last_error or NeisError(ResultKind.UNKNOWN)
 
     # ------------------------------------------------------------ 고수준
-
-    def verify_key(self) -> None:
-        """인증키 유효성 확인. 실패하면 NeisError를 던진다."""
-        self._request(SERVICE_SCHOOL_INFO, {"pSize": 1})
 
     def search_schools(self, name: str) -> list[School]:
         name = (name or "").strip()

@@ -268,12 +268,8 @@ def test_icons_render(qapp):
     assert not icon.pixmap(32, 32).isNull()
 
 
-def test_settings_dialog_builds(qapp, monkeypatch):
-    from app import secrets_store
+def test_settings_dialog_builds(qapp):
     from app.settings_dialog import SettingsDialog
-
-    monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
-    monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
 
     config = Config()
     config.school = {
@@ -285,8 +281,7 @@ def test_settings_dialog_builds(qapp, monkeypatch):
     }
     dialog = SettingsDialog(config)
     try:
-        assert dialog.tabs.count() == 4
-        assert dialog.key_edit.text() == "dummy-key"
+        assert dialog.tabs.count() == 3
         assert "미림마이스터고등학교" in dialog.selected_label.text()
         assert dialog.search_edit.isEnabled()
     finally:
@@ -294,12 +289,8 @@ def test_settings_dialog_builds(qapp, monkeypatch):
 
 
 def test_settings_dialog_saves_allergy_choices(qapp, monkeypatch):
-    from app import secrets_store
     from app.settings_dialog import SettingsDialog
 
-    monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
-    monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
-    monkeypatch.setattr(secrets_store, "set_key", lambda key: None)
     monkeypatch.setattr(Config, "save", lambda self: None)
 
     config = Config()
@@ -323,12 +314,8 @@ def test_settings_dialog_saves_allergy_choices(qapp, monkeypatch):
         dialog.deleteLater()
 
 
-def test_settings_dialog_restores_allergy_choices(qapp, monkeypatch):
-    from app import secrets_store
+def test_settings_dialog_restores_allergy_choices(qapp):
     from app.settings_dialog import SettingsDialog
-
-    monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
-    monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
 
     config = Config()
     config.display["allergy_alerts"] = [5, 9]
@@ -347,12 +334,9 @@ class TestAutostartCheckbox:
 
     @pytest.fixture
     def dialog_factory(self, qapp, monkeypatch):
-        from app import autostart, secrets_store
+        from app import autostart
         from app.settings_dialog import SettingsDialog
 
-        monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
-        monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
-        monkeypatch.setattr(secrets_store, "set_key", lambda key: None)
         monkeypatch.setattr(Config, "save", lambda self: None)
 
         calls: list[bool] = []
@@ -418,17 +402,13 @@ class TestAutostartCheckbox:
         assert dialog.boot_check.isChecked() is False
 
 
-def test_settings_dialog_blocks_search_without_key(qapp, monkeypatch):
-    from app import secrets_store
+def test_settings_dialog_search_always_enabled(qapp):
     from app.settings_dialog import SettingsDialog
-
-    monkeypatch.setattr(secrets_store, "get_key", lambda: "")
-    monkeypatch.setattr(secrets_store, "is_secure", lambda: True)
 
     dialog = SettingsDialog(Config())
     try:
-        assert not dialog.search_edit.isEnabled()
-        assert "인증키" in dialog.search_status.text()
+        assert dialog.search_edit.isEnabled()
+        assert dialog.search_button.isEnabled()
     finally:
         dialog.deleteLater()
 

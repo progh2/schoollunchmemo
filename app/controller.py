@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from . import APP_DISPLAY_NAME, VERSION, autostart, cache, secrets_store
+from . import APP_DISPLAY_NAME, VERSION, autostart, cache
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
 from .neis.models import MealMenu, School, ScheduleEvent
@@ -43,7 +43,7 @@ class AppController(QObject):
         super().__init__()
         self._app = app
         self._config = Config.load()
-        self._client = NeisClient(secrets_store.get_key)
+        self._client = NeisClient()
         self._dialog: SettingsDialog | None = None
         self._view_day = date.today()  # 지금 보고 있는 날
         self._inflight: set[date] = set()

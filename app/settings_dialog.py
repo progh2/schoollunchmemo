@@ -1,16 +1,15 @@
 """설정 창.
 
-인증키 등록과 학교 선택이 여기서 끝나야 한다. 사용자가 이 창을 다시 열
-일이 없게 만드는 것이 목표이므로, 인증키 발급 안내와 즉시 검증을 모두
-창 안에 둔다.
+학교 선택이 여기서 끝나야 한다. 사용자가 이 창을 다시 열
+일이 없게 만드는 것이 목표이므로, 학교 검색을 창 안에 둔다.
+NEIS API는 인증키 없이 공개 접근(일 1000건 제한)으로 호출한다.
 """
 
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,11 +32,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_DISPLAY_NAME, NEIS_PORTAL_URL
-from . import autostart, secrets_store
+from . import APP_DISPLAY_NAME
+from . import autostart
 from .allergens import ALLERGENS
 from .config import Config
-from .neis import NeisClient, NeisError, ResultKind
+from .neis import NeisClient, NeisError
 from .neis.models import MEAL_TYPE_LABELS, School
 from .resources.theme import PALETTE
 from .workers import submit
@@ -50,14 +49,6 @@ _WARN_COLOR = "#B06000"
 
 _COLOR_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "연두"}
 
-GUIDE_STEPS = (
-    "1. open.neis.go.kr 접속 후 회원가입",
-    "2. 상단 [인증키 신청] 메뉴 선택",
-    "3. 활용 목적을 입력하고 신청 (무료 · 즉시 발급)",
-    "4. 마이페이지에서 발급된 인증키 복사",
-    "5. 아래 칸에 붙여넣고 [키 확인] 클릭",
-)
-
 
 class SettingsDialog(QDialog):
     saved = Signal()
@@ -68,15 +59,13 @@ class SettingsDialog(QDialog):
         self._selected: School | None = (
             School.from_config(config.school) if config.school else None
         )
-        # 저장된 키가 아니라 지금 입력창에 있는 키로 검증·검색해야 한다
-        self._client = NeisClient(lambda: self.key_edit.text().strip())
+        self._client = NeisClient()
 
         self.setWindowTitle(f"{APP_DISPLAY_NAME} 설정")
         self.setMinimumWidth(460)
 
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget(self)
-        self.tabs.addTab(self._build_key_tab(), "인증키")
         self.tabs.addTab(self._build_school_tab(), "학교")
         self.tabs.addTab(self._build_display_tab(), "표시")
         self.tabs.addTab(self._build_allergy_tab(), "알레르기")
@@ -94,119 +83,6 @@ class SettingsDialog(QDialog):
         layout.addWidget(buttons)
 
         self._load_values()
-
-    # ------------------------------------------------------------ 인증키 탭
-
-    def _build_key_tab(self) -> QWidget:
-        tab = QWidget(self)
-        layout = QVBoxLayout(tab)
-
-        title_row = QHBoxLayout()
-        title_row.addWidget(QLabel("NEIS 인증키", tab))
-        optional_badge = QLabel("선택 사항", tab)
-        optional_badge.setStyleSheet(
-            "color: #1E7B34; font-size: 8pt; "
-            "border: 1px solid #1E7B34; border-radius: 8px; padding: 0 6px;"
-        )
-        title_row.addWidget(optional_badge)
-        title_row.addStretch(1)
-        layout.addLayout(title_row)
-
-        no_key_note = QLabel(
-            "인증키 없이도 급식·일정 조회가 됩니다 (일 1000건 제한).\n"
-            "더 많이 쓰거나 학교 검색이 느리면 인증키를 등록하세요.",
-            tab,
-        )
-        no_key_note.setWordWrap(True)
-        no_key_note.setStyleSheet("color: #666; font-size: 8pt;")
-        layout.addWidget(no_key_note)
-
-        row = QHBoxLayout()
-        self.key_edit = QLineEdit(tab)
-        self.key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.key_edit.setPlaceholderText("발급받은 인증키를 붙여넣으세요")
-        self.key_edit.textChanged.connect(self._on_key_changed)
-        row.addWidget(self.key_edit, 1)
-
-        self.verify_button = QPushButton("키 확인", tab)
-        self.verify_button.clicked.connect(self._on_verify)
-        row.addWidget(self.verify_button)
-        layout.addLayout(row)
-
-        self.show_key_check = QCheckBox("키 보기", tab)
-        self.show_key_check.toggled.connect(
-            lambda on: self.key_edit.setEchoMode(
-                QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
-            )
-        )
-        layout.addWidget(self.show_key_check)
-
-        self.key_status = QLabel("", tab)
-        self.key_status.setWordWrap(True)
-        layout.addWidget(self.key_status)
-
-        if not secrets_store.is_secure():
-            warning = QLabel(
-                "⚠️ 이 환경에서는 OS 자격증명 저장소를 쓸 수 없어 "
-                "인증키가 설정 폴더에 평문으로 저장됩니다.",
-                tab,
-            )
-            warning.setWordWrap(True)
-            warning.setStyleSheet(f"color: {_WARN_COLOR};")
-            layout.addWidget(warning)
-
-        guide = QGroupBox("인증키가 없으신가요?", tab)
-        guide_layout = QVBoxLayout(guide)
-        for step in GUIDE_STEPS:
-            label = QLabel(step, guide)
-            label.setWordWrap(True)
-            guide_layout.addWidget(label)
-        open_button = QPushButton("발급 페이지 열기 ↗", guide)
-        open_button.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(NEIS_PORTAL_URL))
-        )
-        guide_layout.addWidget(open_button, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(guide)
-
-        layout.addStretch(1)
-        return tab
-
-    def _on_key_changed(self) -> None:
-        self._set_status(self.key_status, "", "")
-        self._update_search_enabled()
-
-    def _on_verify(self) -> None:
-        key = self.key_edit.text().strip()
-        if not key:
-            self._set_status(self.key_status, "인증키를 입력해 주세요.", _ERROR_COLOR)
-            return
-        self.verify_button.setEnabled(False)
-        self.verify_button.setText("확인 중...")
-        self._set_status(self.key_status, "확인하는 중입니다...", _WARN_COLOR)
-        submit(
-            self._client.verify_key,
-            on_ok=lambda _: self._on_verify_done(None),
-            on_err=self._on_verify_done,
-        )
-
-    def _on_verify_done(self, error: Exception | None) -> None:
-        self.verify_button.setEnabled(True)
-        self.verify_button.setText("키 확인")
-        if error is None:
-            self._set_status(self.key_status, "✅ 유효한 인증키입니다.", _OK_COLOR)
-        else:
-            text = (
-                error.user_text
-                if isinstance(error, NeisError)
-                else f"확인하지 못했습니다. ({error})"
-            )
-            prefix = (
-                "❌"
-                if isinstance(error, NeisError) and error.kind is ResultKind.BAD_KEY
-                else "⚠️"
-            )
-            self._set_status(self.key_status, f"{prefix} {text}", _ERROR_COLOR)
-        self._update_search_enabled()
 
     # -------------------------------------------------------------- 학교 탭
 
@@ -243,10 +119,6 @@ class SettingsDialog(QDialog):
         self.selected_label.setWordWrap(True)
         layout.addWidget(self.selected_label)
         return tab
-
-    def _update_search_enabled(self) -> None:
-        self.search_edit.setEnabled(True)
-        self.search_button.setEnabled(True)
 
     def _on_search(self) -> None:
         name = self.search_edit.text().strip()
@@ -449,8 +321,6 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------ 값 입출력
 
     def _load_values(self) -> None:
-        self.key_edit.setText(secrets_store.get_key())
-
         display = self._config.display
         for key, check in self.meal_checks.items():
             check.setChecked(key in display.get("meal_types", ["lunch"]))
@@ -478,7 +348,6 @@ class SettingsDialog(QDialog):
         self.show_on_start_check.setChecked(bool(display.get("show_on_start", True)))
 
         # 자동 시작은 설정 파일이 아니라 OS에 등록된 실제 상태를 보여준다.
-        # 사용자가 작업 관리자에서 껐을 수도 있다.
         self._boot_initial = (
             autostart.is_enabled()
             if autostart.is_supported()
@@ -487,7 +356,6 @@ class SettingsDialog(QDialog):
         self.boot_check.setChecked(self._boot_initial)
 
         self._refresh_selected_label()
-        self._update_search_enabled()
         if self._selected is None:
             self.tabs.setCurrentIndex(0)
 
@@ -506,10 +374,8 @@ class SettingsDialog(QDialog):
                 QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
-                self.tabs.setCurrentIndex(1)
+                self.tabs.setCurrentIndex(0)
                 return
-
-        secrets_store.set_key(self.key_edit.text().strip())
 
         display = self._config.display
         display["meal_types"] = meal_types
@@ -536,7 +402,6 @@ class SettingsDialog(QDialog):
     def _apply_autostart(self) -> bool:
         """자동 시작을 실제로 등록하거나 해제하고, 설정에 남길 값을 돌려준다.
 
-        고르지 않은 채 저장만 반복하는 경우에 레지스트리를 건드리지 않도록
         바뀐 때만 손을 댄다. 실패했으면 설정에도 켜졌다고 적지 않는다.
         """
         wanted = self.boot_check.isChecked()

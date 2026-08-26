@@ -40,14 +40,13 @@ def _rows_for(day: date) -> dict:
 
 @pytest.fixture
 def controller(qapp, monkeypatch):
-    from app import cache, controller as controller_module, secrets_store
+    from app import cache, controller as controller_module
 
     config = Config()
     config.school = dict(SCHOOL)
 
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: config))
     monkeypatch.setattr(Config, "save", lambda self: None)
-    monkeypatch.setattr(secrets_store, "get_key", lambda: "dummy-key")
     # 모든 날짜에 캐시가 있는 상태 → 네트워크 호출이 일어나지 않는다
     monkeypatch.setattr(cache, "load", lambda code, day: _rows_for(day))
     monkeypatch.setattr(cache, "save", lambda *a, **kw: None)
