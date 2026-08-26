@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>학교쪽지</title>
+  <meta name="description" content="오늘 우리 학교 급식을 바탕화면 포스트잇처럼 — 학교쪽지">
+  <meta property="og:title" content="학교쪽지">
+  <meta property="og:description" content="오늘 우리 학교 급식과 학사일정을 바탕화면 포스트잇처럼 보여주는 무료 위젯">
+  <meta property="og:image" content="screenshot.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --yellow: #F5C842;
+      --yellow-light: #FFF8DC;
+      --yellow-dark: #D4A800;
+      --orange: #E8762A;
+      --text: #1a1a1a;
+      --text-muted: #666;
+      --bg: #FAFAFA;
+      --card-bg: #fff;
+      --border: #e8e8e8;
+      --shadow: 0 4px 24px rgba(0,0,0,.08);
+      --radius: 16px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #f0f0f0;
+        --text-muted: #aaa;
+        --bg: #111;
+        --card-bg: #1e1e1e;
+        --border: #333;
+        --shadow: 0 4px 24px rgba(0,0,0,.4);
+        --yellow-light: #2a2000;
+      }
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    /* ── 헤더 ── */
+    header {
+      background: var(--yellow);
+      padding: 60px 24px 80px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 20px,
+        rgba(255,255,255,.08) 20px,
+        rgba(255,255,255,.08) 40px
+      );
+    }
+    .header-inner { position: relative; max-width: 720px; margin: 0 auto; }
+    .app-badge {
+      display: inline-block;
+      background: rgba(0,0,0,.12);
+      color: #5a3e00;
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .08em;
+      padding: 4px 12px;
+      border-radius: 99px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 3.6rem);
+      font-weight: 700;
+      color: #1a0f00;
+      line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      color: #5a3e00;
+      margin-bottom: 36px;
+    }
+    .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 99px;
+      font-size: .95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform .15s, box-shadow .15s;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+    .btn-primary {
+      background: #1a0f00;
+      color: #fff;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,.6);
+      color: #1a0f00;
+      border: 2px solid rgba(0,0,0,.15);
+    }
+    .btn-sm {
+      padding: 10px 20px;
+      font-size: .85rem;
+    }
+
+    /* ── 다운로드 드롭 ── */
+    .download-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 32px;
+      max-width: 640px;
+      margin: 0 auto;
+      box-shadow: var(--shadow);
+    }
+    .download-section h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .platform-list { display: flex; flex-direction: column; gap: 10px; }
+    .platform-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 500;
+      transition: background .15s, border-color .15s;
+    }
+    .platform-row:hover { background: var(--yellow-light); border-color: var(--yellow-dark); }
+    .platform-icon { font-size: 1.5rem; width: 32px; text-align: center; }
+    .platform-name { flex: 1; }
+    .platform-sub { font-size: .8rem; color: var(--text-muted); font-weight: 400; }
+    .platform-arrow { color: var(--text-muted); font-size: 1.1rem; }
+    .version-note {
+      margin-top: 12px;
+      font-size: .78rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .version-note a { color: var(--orange); text-decoration: none; }
+    .version-note a:hover { text-decoration: underline; }
+
+    /* ── 스크린샷 ── */
+    .screenshot-wrap {
+      max-width: 500px;
+      margin: -40px auto 0;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .screenshot-wrap img {
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.25);
+      border: 1px solid var(--border);
+    }
+
+    /* ── 섹션 공통 ── */
+    section { padding: 72px 24px; max-width: 1000px; margin: 0 auto; }
+
+    /* ── 특징 ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      margin-top: 40px;
+    }
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      box-shadow: var(--shadow);
+    }
+    .feature-icon { font-size: 2rem; margin-bottom: 12px; }
+    .feature-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .feature-desc { font-size: .9rem; color: var(--text-muted); }
+
+    /* ── 시작하기 ── */
+    .steps { display: flex; flex-direction: column; gap: 20px; margin-top: 40px; }
+    .step {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      background: var(--yellow);
+      color: #1a0f00;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: .95rem;
+    }
+    .step-body { flex: 1; }
+    .step-title { font-weight: 700; margin-bottom: 4px; }
+    .step-desc { font-size: .9rem; color: var(--text-muted); }
+    .step-desc a { color: var(--orange); text-decoration: none; }
+    .step-desc a:hover { text-decoration: underline; }
+
+    /* ── 플랫폼 지원 ── */
+    .platform-badges {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 32px;
+    }
+    .platform-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 10px 20px;
+      font-size: .9rem;
+      font-weight: 500;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── 섹션 제목 ── */
+    .section-label {
+      display: inline-block;
+      background: var(--yellow);
+      color: #1a0f00;
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      padding: 4px 12px;
+      border-radius: 99px;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .section-sub { font-size: 1rem; color: var(--text-muted); }
+
+    /* ── CTA 배너 ── */
+    .cta-banner {
+      background: var(--yellow);
+      border-radius: var(--radius);
+      padding: 48px 36px;
+      text-align: center;
+      margin: 40px 0;
+    }
+    .cta-banner h2 { font-size: 1.6rem; font-weight: 700; color: #1a0f00; margin-bottom: 8px; }
+    .cta-banner p { color: #5a3e00; margin-bottom: 28px; }
+
+    /* ── 푸터 ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 24px;
+      text-align: center;
+      font-size: .85rem;
+      color: var(--text-muted);
+    }
+    footer a { color: var(--orange); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── 반응형 ── */
+    @media (max-width: 600px) {
+      header { padding: 48px 20px 60px; }
+      section { padding: 48px 20px; }
+      .step { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── 히어로 ── -->
+<header>
+  <div class="header-inner">
+    <div class="app-badge">📌 학교쪽지 · SchoolNote</div>
+    <h1>오늘 급식,<br>바탕화면에 붙여두세요</h1>
+    <p class="tagline">
+      우리 학교 급식 메뉴와 학사일정을<br>
+      포스트잇처럼 화면 한 구석에 조용히 붙여두는 무료 위젯
+    </p>
+    <div class="btn-group">
+      <a href="#download" class="btn btn-primary">⬇ 무료 다운로드</a>
+      <a href="https://github.com/progh2/schoollunchmemo" class="btn btn-secondary" target="_blank" rel="noopener">
+        GitHub ↗
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- ── 스크린샷 ── -->
+<div class="screenshot-wrap">
+  <img src="screenshot.png" alt="학교쪽지 스크린샷">
+</div>
+
+<!-- ── 다운로드 ── -->
+<section id="download" style="padding-top: 56px;">
+  <div style="text-align:center; margin-bottom: 32px;">
+    <div class="section-label">DOWNLOAD</div>
+    <h2 class="section-title">지금 바로 시작하기</h2>
+    <p class="section-sub">Windows · macOS · Linux 모두 지원합니다</p>
+  </div>
+
+  <div class="download-section">
+    <h2>최신 릴리스</h2>
+    <div class="platform-list" id="platformList">
+      <!-- JavaScript로 채워집니다 -->
+      <a class="platform-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank">
+        <span class="platform-icon">🪟</span>
+        <span class="platform-name">
+          Windows<br>
+          <span class="platform-sub">Windows 10/11 (x64)</span>
+        </span>
+        <span class="platform-arrow">↓</span>
+      </a>
+      <a class="platform-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank">
+        <span class="platform-icon"></span>
+        <span class="platform-name">
+          macOS<br>
+          <span class="platform-sub">macOS 12 이상</span>
+        </span>
+        <span class="platform-arrow">↓</span>
+      </a>
+      <a class="platform-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank">
+        <span class="platform-icon">🐧</span>
+        <span class="platform-name">
+          Linux<br>
+          <span class="platform-sub">x64 (tar.gz)</span>
+        </span>
+        <span class="platform-arrow">↓</span>
+      </a>
+    </div>
+    <p class="version-note">
+      <span id="versionText">최신 버전 확인 중...</span>
+      · <a href="https://github.com/progh2/schoollunchmemo/releases" target="_blank">모든 버전 보기</a>
+    </p>
+  </div>
+</section>
+
+<!-- ── 특징 ── -->
+<section id="features">
+  <div class="section-label">FEATURES</div>
+  <h2 class="section-title">이런 점이 좋아요</h2>
+  <p class="section-sub">불편하지 않게, 꼭 필요한 것만</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">📌</div>
+      <div class="feature-title">포스트잇 UI</div>
+      <div class="feature-desc">제목표시줄 없는 반투명 창. 드래그해서 원하는 곳에 두면 위치가 기억됩니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔄</div>
+      <div class="feature-title">자동 갱신</div>
+      <div class="feature-desc">자정이 지나면 스스로 그날 급식 정보를 가져옵니다. 손 안 대도 됩니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <div class="feature-title">날짜 탐색</div>
+      <div class="feature-desc">마우스 휠이나 ‹ › 버튼으로 어제·내일 급식도 확인할 수 있습니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚠️</div>
+      <div class="feature-title">알레르기 경고</div>
+      <div class="feature-desc">내 알레르기를 등록하면 해당 음식이 빨갛게 강조 표시됩니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏫</div>
+      <div class="feature-title">학교 검색</div>
+      <div class="feature-desc">학교 이름 일부만 입력하면 목록에서 골라 설정할 수 있습니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <div class="feature-title">서버 없음</div>
+      <div class="feature-desc">앱이 NEIS API를 직접 호출합니다. 개인정보가 어디에도 전송되지 않습니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌙</div>
+      <div class="feature-title">트레이 상주</div>
+      <div class="feature-desc">포스트잇을 닫아도 트레이에 남습니다. 아이콘을 누르면 다시 나타납니다.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔑</div>
+      <div class="feature-title">키 없이도 동작</div>
+      <div class="feature-desc">NEIS 인증키 없이도 급식·일정 조회가 됩니다. 키를 등록하면 한도가 늘어납니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 시작 안내 ── -->
+<section id="start" style="padding-top:0;">
+  <div style="max-width:640px; margin:0 auto;">
+    <div class="section-label">GET STARTED</div>
+    <h2 class="section-title">5분 안에 시작하기</h2>
+    <p class="section-sub" style="margin-bottom:0;">실행 파일을 받아서 바로 쓰면 됩니다</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">실행 파일 다운로드</div>
+          <div class="step-desc">
+            위의 <a href="#download">다운로드</a> 섹션에서 운영체제에 맞는 파일을 받아 압축을 풀어두세요.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">앱 실행 후 학교 설정</div>
+          <div class="step-desc">
+            처음 실행하면 설정 창이 열립니다.
+            <b>학교</b> 탭에서 학교 이름을 검색해 선택하면 바로 급식이 표시됩니다.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">(선택) NEIS 인증키 등록</div>
+          <div class="step-desc">
+            인증키 없이도 쓸 수 있지만, 일 1000건 제한이 있습니다.
+            <a href="https://open.neis.go.kr" target="_blank" rel="noopener">open.neis.go.kr</a>에서
+            무료로 즉시 발급받을 수 있습니다.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">원하는 곳에 붙여두기</div>
+          <div class="step-desc">
+            포스트잇을 드래그해서 바탕화면 한 구석에 두세요.
+            설정에서 자동 시작을 켜두면 컴퓨터를 켤 때마다 자동으로 뜹니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section style="padding-top:0; padding-bottom:72px;">
+  <div style="max-width:640px; margin:0 auto;">
+    <div class="cta-banner">
+      <h2>지금 바로 사용해보세요</h2>
+      <p>무료이고, 서버도 없고, 개인정보도 수집하지 않습니다</p>
+      <div class="btn-group">
+        <a href="#download" class="btn btn-primary">⬇ 다운로드</a>
+        <a href="https://github.com/progh2/schoollunchmemo" class="btn btn-secondary" target="_blank" rel="noopener">소스 코드 보기</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    데이터 출처: <a href="https://open.neis.go.kr" target="_blank" rel="noopener">교육부 NEIS 교육정보 개방 포털</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/progh2/schoollunchmemo" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/progh2/schoollunchmemo/issues" target="_blank" rel="noopener">버그 신고</a>
+  </p>
+  <p style="margin-top:8px; font-size:.78rem;">
+    본 프로젝트는 교육부·시도교육청과 무관한 비공식 개인 프로젝트입니다.
+  </p>
+</footer>
+
+<script>
+  // GitHub API로 최신 릴리스 정보를 가져와 다운로드 링크를 채운다
+  (async () => {
+    try {
+      const res = await fetch('https://api.github.com/repos/progh2/schoollunchmemo/releases/latest');
+      if (!res.ok) return;
+      const data = await res.json();
+      const tag = data.tag_name || '';
+      const assets = data.assets || [];
+
+      const platforms = [
+        { key: 'windows', icon: '🪟', name: 'Windows', sub: 'Windows 10/11 (x64)', ext: 'zip' },
+        { key: 'macos',   icon: '',  name: 'macOS',   sub: 'macOS 12 이상',        ext: 'zip' },
+        { key: 'linux',   icon: '🐧', name: 'Linux',   sub: 'x64 (tar.gz)',         ext: 'tar.gz' },
+      ];
+
+      const rows = platforms.map(p => {
+        const asset = assets.find(a => a.name.toLowerCase().includes(p.key));
+        const url = asset ? asset.browser_download_url
+                          : `https://github.com/progh2/schoollunchmemo/releases/latest`;
+        const size = asset ? ` · ${(asset.size / 1024 / 1024).toFixed(0)}MB` : '';
+        return `<a class="platform-row" href="${url}" target="_blank" rel="noopener">
+          <span class="platform-icon">${p.icon}</span>
+          <span class="platform-name">
+            ${p.name}<br>
+            <span class="platform-sub">${p.sub}${size}</span>
+          </span>
+          <span class="platform-arrow">↓</span>
+        </a>`;
+      });
+
+      document.getElementById('platformList').innerHTML = rows.join('');
+      document.getElementById('versionText').textContent = tag ? `최신 버전: ${tag}` : '릴리스 페이지 바로가기';
+    } catch (_) {
+      document.getElementById('versionText').textContent = '릴리스 페이지에서 다운로드';
+    }
+  })();
+</script>
+</body>
+</html>

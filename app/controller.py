@@ -100,7 +100,8 @@ class AppController(QObject):
             self.open_settings()
 
     def _is_ready(self) -> bool:
-        return bool(secrets_store.get_key()) and self._config.is_configured
+        # 인증키는 선택 사항이다. 키 없이도 NEIS API는 일 1000건 한도로 동작한다.
+        return self._config.is_configured
 
     def _sync_autostart(self) -> None:
         """설정과 OS의 자동 시작 등록을 맞춘다.
@@ -181,7 +182,7 @@ class AppController(QObject):
             self._show_message(
                 "설정이 필요해요",
                 "📌",
-                detail="트레이 아이콘을 눌러 학교와 인증키를 등록해 주세요.",
+                detail="트레이 아이콘을 눌러 학교를 등록해 주세요.",
                 error=True,
             )
             return

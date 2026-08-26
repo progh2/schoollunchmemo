@@ -101,7 +101,25 @@ class SettingsDialog(QDialog):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
 
-        layout.addWidget(QLabel("NEIS 인증키", tab))
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("NEIS 인증키", tab))
+        optional_badge = QLabel("선택 사항", tab)
+        optional_badge.setStyleSheet(
+            "color: #1E7B34; font-size: 8pt; "
+            "border: 1px solid #1E7B34; border-radius: 8px; padding: 0 6px;"
+        )
+        title_row.addWidget(optional_badge)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
+        no_key_note = QLabel(
+            "인증키 없이도 급식·일정 조회가 됩니다 (일 1000건 제한).\n"
+            "더 많이 쓰거나 학교 검색이 느리면 인증키를 등록하세요.",
+            tab,
+        )
+        no_key_note.setWordWrap(True)
+        no_key_note.setStyleSheet("color: #666; font-size: 8pt;")
+        layout.addWidget(no_key_note)
 
         row = QHBoxLayout()
         self.key_edit = QLineEdit(tab)
@@ -227,15 +245,8 @@ class SettingsDialog(QDialog):
         return tab
 
     def _update_search_enabled(self) -> None:
-        has_key = bool(self.key_edit.text().strip())
-        self.search_edit.setEnabled(has_key)
-        self.search_button.setEnabled(has_key)
-        if not has_key:
-            self._set_status(
-                self.search_status, "먼저 인증키를 등록하세요.", _WARN_COLOR
-            )
-        elif self.search_status.text() == "먼저 인증키를 등록하세요.":
-            self._set_status(self.search_status, "", "")
+        self.search_edit.setEnabled(True)
+        self.search_button.setEnabled(True)
 
     def _on_search(self) -> None:
         name = self.search_edit.text().strip()

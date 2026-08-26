@@ -60,10 +60,12 @@ class NeisClient:
 
     def _request(self, service: str, params: dict[str, Any]) -> list[dict]:
         key = (self._key_provider() or "").strip()
-        if not key:
-            raise NeisError(ResultKind.BAD_KEY, message="인증키가 등록되지 않았습니다.")
 
-        query = {"KEY": key, "Type": "json", "pIndex": 1, "pSize": 100, **params}
+        # 키가 없으면 KEY 파라미터를 생략한다.
+        # NEIS API는 키 없이도 일 1000건 한도로 동작한다.
+        query: dict[str, Any] = {"Type": "json", "pIndex": 1, "pSize": 100, **params}
+        if key:
+            query["KEY"] = key
         url = f"{BASE_URL}/{service}"
 
         last_error: NeisError | None = None
