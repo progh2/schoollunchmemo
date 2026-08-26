@@ -14,7 +14,7 @@ set -eu
 cd "$(dirname "$0")"
 
 PY=".venv/bin/python"
-PROBE='from PySide6.QtWidgets import QApplication; import requests, keyring'
+PROBE='from PySide6.QtWidgets import QApplication; import requests'
 
 BACKGROUND=0
 case "${1:-}" in

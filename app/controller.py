@@ -8,10 +8,11 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import QObject, Qt
-from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PySide6.QtCore import QObject, QPoint, Qt
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-from . import APP_DISPLAY_NAME, VERSION, autostart, cache
+from . import autostart, cache
+from .calendar_popup import CalendarPopup, DayMarks
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
 from .neis.models import MealMenu, School, ScheduleEvent
@@ -45,8 +46,10 @@ class AppController(QObject):
         self._config = Config.load()
         self._client = NeisClient()
         self._dialog: SettingsDialog | None = None
+        self._calendar: CalendarPopup | None = None
         self._view_day = date.today()  # 지금 보고 있는 날
         self._inflight: set[date] = set()
+        self._month_inflight: set[tuple[int, int]] = set()
 
         self.note = StickyNote(color=self._config.display.get("color", "yellow"))
         self.tray = Tray(color=self._config.display.get("color", "yellow"))
@@ -64,6 +67,7 @@ class AppController(QObject):
         self.note.positionChanged.connect(self._on_position_changed)
         self.note.dateStepped.connect(self.step_day)
         self.note.todayRequested.connect(self.go_today)
+        self.note.calendarRequested.connect(self.open_calendar)
 
         self.tray.toggleRequested.connect(self.toggle_note)
         self.tray.refreshRequested.connect(lambda: self.refresh(force=True))
@@ -141,6 +145,13 @@ class AppController(QObject):
         if self._view_day == date.today():
             return
         self._view_day = date.today()
+        self.refresh()
+
+    def go_day(self, day: date) -> None:
+        """달력에서 고른 날로 옮긴다."""
+        if abs((day - date.today()).days) > MAX_DAY_OFFSET or day == self._view_day:
+            return
+        self._view_day = day
         self.refresh()
 
     def _on_day_changed(self) -> None:
@@ -274,6 +285,120 @@ class AppController(QObject):
                 error=True,
             )
 
+    # ---------------------------------------------------------------- 달력
+
+    def open_calendar(self, anchor: QPoint) -> None:
+        if not self._is_ready():
+            # 학교가 등록되지 않았으면 표시할 것이 없다. 설정으로 안내한다.
+            self.open_settings()
+            return
+
+        color = self._config.display.get("color", "yellow")
+        if self._calendar is None:
+            popup = CalendarPopup(color, self.note)
+            popup.dateSelected.connect(self.go_day)
+            popup.monthShown.connect(self.load_month)
+            self._calendar = popup
+        else:
+            self._calendar.apply_color(color)
+
+        self._calendar.show_at(self._view_day, anchor)
+        # setCurrentPage가 같은 달이면 신호를 내지 않으므로 여기서도 부른다.
+        self.load_month(self._view_day.year, self._view_day.month)
+
+    def load_month(self, year: int, month: int) -> None:
+        """달력에 찍을 한 달치 표시를 준비한다. 캐시가 있으면 부르지 않는다."""
+        if self._calendar is None or not self._is_ready():
+            return
+
+        school = School.from_config(self._config.school or {})
+        cached = cache.load_month(school.school_code, year, month)
+        if cached:
+            self._calendar.set_marks(self._marks_from_cached(cached))
+            # 다 지나간 달은 자료가 더 바뀌지 않는다. 이번 달과 앞날은 하루에 한 번만.
+            if self._month_is_past(year, month) or cache.saved_today(cached):
+                return
+
+        key = (year, month)
+        if key in self._month_inflight:
+            return
+        self._month_inflight.add(key)
+        if not cached:
+            self._calendar.set_status("표시를 불러오는 중...")
+        submit(
+            self._client.fetch_month_rows,
+            school,
+            year,
+            month,
+            on_ok=lambda result: self._on_month_fetched(school, year, month, result),
+            on_err=lambda exc: self._on_month_failed(year, month, exc),
+        )
+
+    def _on_month_fetched(
+        self, school: School, year: int, month: int, result: tuple[list, list]
+    ) -> None:
+        self._month_inflight.discard((year, month))
+        meal_rows, schedule_rows = result
+        cache.save_month(school.school_code, year, month, meal_rows, schedule_rows)
+        if self._calendar is None:
+            return
+        # 응답을 기다리는 사이 다른 달로 넘겼으면 화면은 건드리지 않는다
+        if (self._calendar.year_shown(), self._calendar.month_shown()) != (year, month):
+            return
+        self._calendar.set_status("")
+        self._calendar.set_marks(self._marks_from_rows(meal_rows, schedule_rows))
+
+    def _on_month_failed(self, year: int, month: int, error: Exception) -> None:
+        self._month_inflight.discard((year, month))
+        log.info("달력 표시를 가져오지 못했습니다 (%d-%02d): %s", year, month, error)
+        if self._calendar is None:
+            return
+        if (self._calendar.year_shown(), self._calendar.month_shown()) == (year, month):
+            self._calendar.set_status("표시를 가져오지 못했어요")
+
+    @staticmethod
+    def _month_is_past(year: int, month: int) -> bool:
+        today = date.today()
+        return (year, month) < (today.year, today.month)
+
+    def _marks_from_cached(self, cached: dict) -> dict[date, DayMarks]:
+        return self._marks_from_rows(
+            cached.get("meal_rows", []), cached.get("schedule_rows", [])
+        )
+
+    def _marks_from_rows(
+        self, meal_rows: list[dict], schedule_rows: list[dict]
+    ) -> dict[date, DayMarks]:
+        """달력 표시를 만든다.
+
+        급식은 표시 설정으로 걸러내지 않는다. 달력의 목적이 "그날 무엇이
+        나오는지" 알려주는 것이므로, 중식만 보도록 해 둔 사람에게도 조식·석식이
+        있다는 사실은 알려 주어야 한다. 일정은 포스트잇과 같은 학년 필터를 쓴다.
+        """
+        grade = self._config.display.get("grade_filter")
+
+        meals: dict[date, set[str]] = {}
+        for meal in parse_meals(meal_rows):
+            meals.setdefault(meal.day, set()).add(meal.meal_key)
+
+        events: dict[date, list[str]] = {}
+        holidays: set[date] = set()
+        for event in parse_schedule(schedule_rows):
+            if not event.applies_to(grade):
+                continue
+            events.setdefault(event.day, []).append(event.name)
+            if event.is_holiday:
+                holidays.add(event.day)
+
+        return {
+            day: DayMarks(
+                meal_keys=frozenset(meals.get(day, ())),
+                events=tuple(events.get(day, ())),
+                is_holiday=day in holidays,
+            )
+            for day in set(meals) | set(events)
+        }
+
     # ---------------------------------------------------------------- 렌더링
 
     def _render_rows(
@@ -361,8 +486,9 @@ class AppController(QObject):
 
     # ---------------------------------------------------------------- 설정 창
 
-    def open_settings(self) -> None:
+    def open_settings(self, tab: str = "") -> None:
         if self._dialog is not None and self._dialog.isVisible():
+            self._dialog.show_tab(tab)
             self._dialog.raise_()
             self._dialog.activateWindow()
             return
@@ -372,6 +498,7 @@ class AppController(QObject):
         dialog.saved.connect(self._on_settings_saved)
         dialog.destroyed.connect(self._on_dialog_closed)
         self._dialog = dialog
+        dialog.show_tab(tab)
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
@@ -385,14 +512,8 @@ class AppController(QObject):
         self.refresh(force=True)
 
     def show_about(self) -> None:
-        QMessageBox.information(
-            None,
-            f"{APP_DISPLAY_NAME} 정보",
-            f"<b>{APP_DISPLAY_NAME}</b> (SchoolNote) v{VERSION}<br><br>"
-            "오늘의 급식과 학사일정을 포스트잇처럼 보여주는 위젯입니다.<br><br>"
-            "데이터 출처: 교육부 NEIS 교육정보 개방 포털<br>"
-            "<a href='https://open.neis.go.kr'>open.neis.go.kr</a>",
-        )
+        """정보는 설정 창의 '정보' 탭에 모아 둔다. 같은 내용을 두 곳에 두지 않는다."""
+        self.open_settings("info")
 
     # ---------------------------------------------------------------- 종료
 

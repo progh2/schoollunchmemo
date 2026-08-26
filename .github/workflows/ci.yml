@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # base를 가리지 않는다. main을 향한 PR만 받으면 PR 위에 쌓은 PR이
+  # 검사에서 빠져 버린다.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

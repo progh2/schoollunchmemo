@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import requests
@@ -25,6 +25,8 @@ READ_TIMEOUT = 10.0
 BACKOFF_SECONDS = (2, 8, 30)
 MAX_ATTEMPTS = 3
 SEARCH_LIMIT = 100
+#: 한 달치는 급식 최대 93행, 일정도 100행을 넘지 않는다. 한 번에 다 받는다.
+MONTH_PAGE_SIZE = 1000
 
 SERVICE_SCHOOL_INFO = "schoolInfo"
 SERVICE_MEAL = "mealServiceDietInfo"
@@ -138,6 +140,40 @@ class NeisClient:
         """급식·학사일정 원본 row를 함께 가져온다. 캐시에 그대로 저장한다."""
         meal_rows = self.fetch_meal_rows(school, day, meal_keys)
         schedule_rows = self.fetch_schedule_rows(school, day)
+        return meal_rows, schedule_rows
+
+    def fetch_month_rows(
+        self, school: School, year: int, month: int
+    ) -> tuple[list[dict], list[dict]]:
+        """한 달치 급식·학사일정 원본 row. 달력에 표시를 찍는 데 쓴다.
+
+        급식 구분으로 걸러 받지 않는다. 달력은 어느 급식이 있는지를 보여주는
+        것이 목적이므로 세 구분을 다 받아 두고, 표시할 때 설정으로 고른다.
+        """
+        first = date(year, month, 1)
+        last = date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
+        span = {"pSize": MONTH_PAGE_SIZE}
+
+        meal_rows = self._request(
+            SERVICE_MEAL,
+            {
+                "ATPT_OFCDC_SC_CODE": school.office_code,
+                "SD_SCHUL_CODE": school.school_code,
+                "MLSV_FROM_YMD": f"{first:%Y%m%d}",
+                "MLSV_TO_YMD": f"{last:%Y%m%d}",
+                **span,
+            },
+        )
+        schedule_rows = self._request(
+            SERVICE_SCHEDULE,
+            {
+                "ATPT_OFCDC_SC_CODE": school.office_code,
+                "SD_SCHUL_CODE": school.school_code,
+                "AA_FROM_YMD": f"{first:%Y%m%d}",
+                "AA_TO_YMD": f"{last:%Y%m%d}",
+                **span,
+            },
+        )
         return meal_rows, schedule_rows
 
     @staticmethod

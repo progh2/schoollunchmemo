@@ -32,7 +32,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import APP_DISPLAY_NAME
+from . import (
+    APP_DISPLAY_NAME,
+    APP_NAME,
+    AUTHOR_NAME,
+    AUTHOR_URL,
+    ISSUES_URL,
+    LICENSE_NAME,
+    NEIS_PORTAL_URL,
+    REPO_URL,
+    VERSION,
+)
 from . import autostart
 from .allergens import ALLERGENS
 from .config import Config
@@ -46,6 +56,7 @@ log = logging.getLogger(__name__)
 _OK_COLOR = "#1E7B34"
 _ERROR_COLOR = "#C5221F"
 _WARN_COLOR = "#B06000"
+_MUTED_COLOR = "#6B6B6B"
 
 _COLOR_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "연두"}
 
@@ -66,9 +77,12 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget(self)
-        self.tabs.addTab(self._build_school_tab(), "학교")
-        self.tabs.addTab(self._build_display_tab(), "표시")
-        self.tabs.addTab(self._build_allergy_tab(), "알레르기")
+        self._tab_index = {
+            "school": self.tabs.addTab(self._build_school_tab(), "학교"),
+            "display": self.tabs.addTab(self._build_display_tab(), "표시"),
+            "allergy": self.tabs.addTab(self._build_allergy_tab(), "알레르기"),
+            "info": self.tabs.addTab(self._build_about_tab(), "정보"),
+        }
         layout.addWidget(self.tabs)
 
         buttons = QDialogButtonBox(
@@ -317,6 +331,83 @@ class SettingsDialog(QDialog):
 
         layout.addStretch(1)
         return tab
+
+    # ---------------------------------------------------------------- 정보 탭
+
+    def _build_about_tab(self) -> QWidget:
+        tab = QWidget(self)
+        layout = QVBoxLayout(tab)
+
+        heading = QLabel(
+            f"<span style='font-size:13pt; font-weight:600'>{APP_DISPLAY_NAME}</span>"
+            f" &nbsp;<span style='color:{_MUTED_COLOR}'>{APP_NAME} v{VERSION}</span>",
+            tab,
+        )
+        layout.addWidget(heading)
+
+        intro = QLabel(
+            "오늘 우리 학교의 급식과 학사일정을, 책상에 붙여 둔 포스트잇처럼 "
+            "보여주는 데스크톱 위젯입니다.",
+            tab,
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        project = QGroupBox("프로젝트", tab)
+        project_form = QFormLayout(project)
+        project_form.addRow(
+            "저장소",
+            self._link(REPO_URL, REPO_URL.split("://", 1)[-1], project),
+        )
+        project_form.addRow(
+            "버그·건의", self._link(ISSUES_URL, "이슈 남기기", project)
+        )
+        project_form.addRow("라이선스", QLabel(LICENSE_NAME, project))
+        layout.addWidget(project)
+
+        maker = QGroupBox("만든 사람", tab)
+        maker_form = QFormLayout(maker)
+        maker_form.addRow(
+            AUTHOR_NAME,
+            self._link(AUTHOR_URL, f"@{AUTHOR_URL.rstrip('/').rsplit('/', 1)[-1]}", maker),
+        )
+        layout.addWidget(maker)
+
+        source = QGroupBox("데이터 출처", tab)
+        source_layout = QVBoxLayout(source)
+        source_layout.addWidget(
+            QLabel("교육부 NEIS 교육정보 개방 포털", source)
+        )
+        source_layout.addWidget(
+            self._link(NEIS_PORTAL_URL, NEIS_PORTAL_URL.split("://", 1)[-1], source)
+        )
+        caution = QLabel(
+            "급식·알레르기 정보는 학교가 등록한 자료입니다. 참고용으로만 쓰고 "
+            "최종 확인은 학교 공지를 따라 주세요.",
+            source,
+        )
+        caution.setWordWrap(True)
+        caution.setStyleSheet(f"color: {_WARN_COLOR};")
+        source_layout.addWidget(caution)
+        layout.addWidget(source)
+
+        layout.addStretch(1)
+        return tab
+
+    @staticmethod
+    def _link(url: str, text: str, parent: QWidget) -> QLabel:
+        label = QLabel(f"<a href='{url}'>{text}</a>", parent)
+        label.setOpenExternalLinks(True)
+        label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        return label
+
+    def show_tab(self, name: str) -> None:
+        """이름으로 탭을 고른다. 모르는 이름이면 지금 탭을 그대로 둔다."""
+        index = self._tab_index.get(name)
+        if index is not None:
+            self.tabs.setCurrentIndex(index)
 
     # ------------------------------------------------------------ 값 입출력
 

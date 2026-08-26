@@ -18,7 +18,7 @@ cd /d "%~dp0"
 
 set "PY=.venv\Scripts\python.exe"
 set "PYW=.venv\Scripts\pythonw.exe"
-set "PROBE=from PySide6.QtWidgets import QApplication; import requests, keyring"
+set "PROBE=from PySide6.QtWidgets import QApplication; import requests"
 
 set "CONSOLE="
 if /i "%~1"=="--console" set "CONSOLE=1"

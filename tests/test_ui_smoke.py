@@ -281,7 +281,8 @@ def test_settings_dialog_builds(qapp):
     }
     dialog = SettingsDialog(config)
     try:
-        assert dialog.tabs.count() == 3
+        assert dialog.tabs.count() == 4
+        assert dialog.tabs.tabText(dialog._tab_index["info"]) == "정보"
         assert "미림마이스터고등학교" in dialog.selected_label.text()
         assert dialog.search_edit.isEnabled()
     finally:
@@ -409,6 +410,128 @@ def test_settings_dialog_search_always_enabled(qapp):
     try:
         assert dialog.search_edit.isEnabled()
         assert dialog.search_button.isEnabled()
+    finally:
+        dialog.deleteLater()
+
+
+class TestDateLabelClick:
+    """날짜를 누르면 달력, 나머지를 누르면 재료 펼침."""
+
+    @pytest.fixture
+    def shown(self, note):
+        note.render_view(
+            NoteView(day=date(2026, 7, 29), meals=parse_meals(MEAL_ROWS))
+        )
+        note.show()
+        yield note
+        note.hide()
+
+    def test_date_label_is_hit_tested(self, shown):
+        from PySide6.QtCore import QPoint
+
+        center = shown.date_label.mapToGlobal(shown.date_label.rect().center())
+        assert shown._on_date_label(center) is True
+        assert shown._on_date_label(shown.mapToGlobal(QPoint(2, 2))) is False
+
+    def test_clicking_the_date_asks_for_the_calendar(self, shown):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        seen = []
+        shown.calendarRequested.connect(seen.append)
+        pos = shown.date_label.mapTo(shown, shown.date_label.rect().center())
+        QTest.mouseClick(shown, Qt.MouseButton.LeftButton, pos=pos)
+
+        assert len(seen) == 1
+        assert "국내산" not in shown.body.text()  # 재료는 그대로 접혀 있다
+
+    def test_clicking_elsewhere_still_toggles_details(self, shown):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        seen = []
+        shown.calendarRequested.connect(seen.append)
+        QTest.mouseClick(shown, Qt.MouseButton.LeftButton, pos=QPoint(20, 100))
+
+        assert seen == []
+        assert "국내산" in shown.body.text()
+
+
+class TestCalendarPopup:
+    @pytest.fixture
+    def popup(self, qapp):
+        from app.calendar_popup import CalendarPopup
+
+        widget = CalendarPopup()
+        yield widget
+        widget.deleteLater()
+
+    def test_legend_names_every_meal(self, popup):
+        from app.calendar_popup import MEAL_COLORS, MEAL_SLOTS
+
+        html = popup.legend.text()
+        for key in MEAL_SLOTS:
+            assert MEAL_COLORS[key] in html
+        for label in ("조식", "중식", "석식", "일정"):
+            assert label in html
+
+    def test_status_replaces_then_restores_the_legend(self, popup):
+        legend = popup.legend.text()
+        popup.set_status("표시를 가져오지 못했어요")
+        assert popup.legend.text() == "표시를 가져오지 못했어요"
+        popup.set_status("")
+        assert popup.legend.text() == legend
+
+    def test_clicking_a_day_reports_a_python_date(self, popup):
+        from PySide6.QtCore import QDate
+
+        seen = []
+        popup.dateSelected.connect(seen.append)
+        popup.calendar.clicked.emit(QDate(2026, 7, 9))
+        assert seen == [date(2026, 7, 9)]
+
+    def test_marks_paint_without_error(self, popup):
+        """paintCell은 실제로 그려 봐야 오류가 드러난다."""
+        from app.calendar_popup import DayMarks
+
+        popup.set_marks(
+            {
+                date(2026, 7, 6): DayMarks(meal_keys=frozenset({"lunch"})),
+                date(2026, 7, 7): DayMarks(
+                    meal_keys=frozenset({"breakfast", "lunch", "dinner"}),
+                    events=("체육대회",),
+                ),
+                date(2026, 7, 17): DayMarks(
+                    events=("여름방학식",), is_holiday=True
+                ),
+            }
+        )
+        popup.calendar.setCurrentPage(2026, 7)
+        assert not popup.calendar.grab().isNull()
+
+    @pytest.mark.parametrize("color", list(PALETTE))
+    def test_every_palette_applies(self, popup, color):
+        popup.apply_color(color)
+        assert not popup.calendar.grab().isNull()
+
+
+def test_about_tab_links_to_project_and_author(qapp):
+    from PySide6.QtWidgets import QLabel
+
+    from app import AUTHOR_URL, ISSUES_URL, LICENSE_NAME, REPO_URL
+    from app.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(Config())
+    try:
+        dialog.show_tab("info")
+        assert dialog.tabs.currentIndex() == dialog._tab_index["info"]
+
+        tab = dialog.tabs.currentWidget()
+        html = " ".join(label.text() for label in tab.findChildren(QLabel))
+        assert REPO_URL in html
+        assert ISSUES_URL in html
+        assert AUTHOR_URL in html
+        assert LICENSE_NAME in html
     finally:
         dialog.deleteLater()
 
