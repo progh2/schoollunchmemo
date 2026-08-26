@@ -169,9 +169,9 @@ class TestMeals:
 
     def test_sorted_by_meal_order(self):
         rows = [
-            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "3", "MMEAL_SC_NM": "석식"},
-            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "1", "MMEAL_SC_NM": "조식"},
-            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "2", "MMEAL_SC_NM": "중식"},
+            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "3", "MMEAL_SC_NM": "석식", "DDISH_NM": "비빔밥"},
+            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "1", "MMEAL_SC_NM": "조식", "DDISH_NM": "토스트"},
+            {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "2", "MMEAL_SC_NM": "중식", "DDISH_NM": "국밥"},
         ]
         assert [m.meal_key for m in parse_meals(rows)] == [
             "breakfast",
@@ -181,6 +181,16 @@ class TestMeals:
 
     def test_skips_rows_without_date(self):
         assert parse_meals([{"MMEAL_SC_CODE": "2"}]) == []
+
+    def test_skips_rows_with_empty_dishes(self):
+        """DDISH_NM이 비어 있으면 shell row로 간주해 제외한다 (이슈 #12)."""
+        base = {"MLSV_YMD": "20260729", "MMEAL_SC_CODE": "2", "MMEAL_SC_NM": "중식"}
+        assert parse_meals([{**base, "DDISH_NM": ""}]) == []
+        assert parse_meals([{**base, "DDISH_NM": "   "}]) == []
+        assert parse_meals([{**base, "DDISH_NM": "<br/>"}]) == []
+        assert parse_meals([{**base, "DDISH_NM": "<br/><br/>"}]) == []
+        # 실제 메뉴가 있으면 통과
+        assert len(parse_meals([{**base, "DDISH_NM": "비빔밥"}])) == 1
 
 
 class TestSchedule:

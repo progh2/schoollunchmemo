@@ -174,12 +174,15 @@ def parse_meals(rows: list[dict]) -> list[MealMenu]:
         if day is None:
             continue
         code = _text(row, "MMEAL_SC_CODE")
+        dishes = parse_dishes(_text(row, "DDISH_NM"))
+        if not dishes:
+            continue
         meals.append(
             MealMenu(
                 day=day,
                 meal_key=MEAL_CODE_TO_KEY.get(code, code),
                 meal_name=_text(row, "MMEAL_SC_NM"),
-                dishes=parse_dishes(_text(row, "DDISH_NM")),
+                dishes=dishes,
                 calorie=_parse_calorie(_text(row, "CAL_INFO")),
                 origin=_BR_RE.sub("\n", _text(row, "ORPLC_INFO")),
                 nutrition=_BR_RE.sub("\n", _text(row, "NTR_INFO")),
