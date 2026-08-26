@@ -1,4 +1,4 @@
-# 📌 학교 급식메뉴 포스트잇 (School Lunch Memo)
+# 📌 급식쪽지 (School Lunch Memo)
 
 ![Screenshot](./screenshot.png)
 
@@ -18,6 +18,7 @@
 - **트레이 상주** — 숨겨도 트레이 아이콘은 항상 남습니다. 클릭하면 다시 표시.
 - **손 안 대도 갱신** — 자정이 지나면 스스로 그날 정보를 가져옵니다.
 - **어제·내일도 확인** — 마우스 휠을 굴리거나 `‹ ›` 버튼으로 날짜를 넘깁니다. 한 번 본 날은 캐시에서 바로 뜹니다.
+- **달력에서 고르기** — 날짜를 누르면 달력이 펼쳐집니다. 급식이 있는 날은 조식·중식·석식이 각각 점으로, 일정이 있는 날은 밑줄로 표시됩니다.
 - **알레르기 경고** — 설정에 등록한 알레르기가 들어간 음식은 재료까지 빨갛게 표시됩니다.
 - **재료는 접어둡니다** — 평소엔 메뉴만, 포스트잇을 클릭하면 원산지·영양 정보가 펼쳐집니다.
 - **켜면 알아서 뜹니다** — 설정에서 자동 시작을 켜두면 컴퓨터를 켤 때 함께 실행됩니다.
@@ -125,6 +126,7 @@ project1/
 │  ├─ controller.py        # 전체 흐름 조율 (조회 → 렌더 → 상태 표시)
 │  ├─ tray.py              # 트레이 아이콘과 메뉴
 │  ├─ sticky.py            # 포스트잇 위젯
+│  ├─ calendar_popup.py    # 달력 팝업 (급식·일정 표시)
 │  ├─ settings_dialog.py   # 설정 창 (인증키 / 학교 / 표시)
 │  ├─ config.py            # 설정 로드·저장, 경로 결정
 │  ├─ secrets_store.py     # 인증키 보관 (keyring + 폴백)
@@ -149,7 +151,8 @@ project1/
 │  ├─ test_config.py       # 설정 병합·마이그레이션
 │  ├─ test_ui_smoke.py     # offscreen 위젯 렌더
 │  ├─ test_day_navigation.py  # 날짜 이동
-│  └─ test_autostart.py    # 자동 시작 등록
+│  ├─ test_autostart.py    # 자동 시작
+│  └─ test_calendar.py     # 달력 표시와 월 캐시 규칙 등록
 ├─ sandbox/                # 본체와 무관한 연습 파일
 ├─ run.bat                 # Windows 실행 스크립트 (ANSI/CP949로 저장)
 ├─ run.sh                  # macOS / Linux 실행 스크립트
@@ -187,8 +190,12 @@ UI 테스트는 `QT_QPA_PLATFORM=offscreen` 으로 실행되므로 화면 없이
 ## 🗺 로드맵
 
 - **v0.1 (MVP)** — 포스트잇 위젯, 트레이, 설정(인증키 검증 + 학교 검색), 자동 갱신, Windows 빌드
-- **v0.2** — 표시 옵션 전체, 자동 시작, macOS/Linux 빌드, 오프라인 캐시
+- **v0.2** — 표시 옵션 전체, 자동 시작, 실행 스크립트, 앱 아이콘, macOS/Linux 빌드
+- **v0.3** — 달력으로 날짜 고르기, 정보 탭, 이름 통일
 - **백로그** — 여러 학교 등록, 내일 급식 미리보기, 특정 메뉴 알림, 주간 요약
+
+진행 상황은 [이슈](https://github.com/progh2/schoollunchmemo/issues)와
+[마일스톤](https://github.com/progh2/schoollunchmemo/milestones)에서 볼 수 있습니다.
 
 ---
 
@@ -200,5 +207,9 @@ UI 테스트는 `QT_QPA_PLATFORM=offscreen` 으로 실행되므로 화면 없이
 
 ## ⚖️ 라이선스 및 출처
 
+**MIT License** — 자세한 내용은 [LICENSE](LICENSE)를 보세요.
+Copyright (c) 2026 Gihun Ham ([@progh2](https://github.com/progh2))
+
 - 급식·학사일정 데이터 출처: **교육부 NEIS 교육정보 개방 포털** (<https://open.neis.go.kr>)
 - 본 프로젝트는 교육부·시도교육청과 무관한 비공식 개인 프로젝트입니다.
+- 급식·알레르기 정보는 학교가 등록한 자료입니다. 참고용으로만 쓰고 최종 확인은 학교 공지를 따라 주세요.

@@ -14,7 +14,7 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from . import APP_DISPLAY_NAME, APP_NAME
+from . import APP_DISPLAY_NAME, APP_NAME, VERSION
 from .config import data_dir
 from .controller import AppController
 from .resources.icons import app_icon
@@ -62,7 +62,7 @@ def _claim_single_instance() -> QLocalServer | None:
 
 def main() -> int:
     QCoreApplication.setApplicationName(APP_NAME)
-    QCoreApplication.setApplicationVersion("0.1.0")
+    QCoreApplication.setApplicationVersion(VERSION)
 
     app = QApplication(sys.argv)
     app.setApplicationDisplayName(APP_DISPLAY_NAME)
@@ -74,7 +74,7 @@ def main() -> int:
 
     server = _claim_single_instance()
     if server is None:
-        print("학교쪽지가 이미 실행 중입니다.", file=sys.stderr)
+        print("급식쪽지가 이미 실행 중입니다.", file=sys.stderr)
         return 0
 
     controller = AppController(app)
