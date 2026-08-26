@@ -1,7 +1,6 @@
 """설정 로드·저장.
 
 설정 파일은 OS별 표준 설정 디렉터리에 둔다.
-인증키는 여기에 저장하지 않는다 (secrets_store 참조).
 """
 
 from __future__ import annotations

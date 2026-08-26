@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 #: 조회 실패 시 포스트잇에 띄울 문구 (PRD 4.2)
 _FAILURE_TEXT: dict[ResultKind, str] = {
-    ResultKind.BAD_KEY: "인증키를 확인해 주세요",
+    ResultKind.BAD_KEY: "NEIS 이용이 제한되었어요. 잠시 후 다시 시도해 주세요",
     ResultKind.QUOTA: "오늘 호출 한도를 초과했어요",
     ResultKind.NETWORK: "정보를 가져오지 못했어요",
     ResultKind.SERVER: "NEIS 서버에 문제가 있어요",
@@ -100,7 +100,7 @@ class AppController(QObject):
             self.open_settings()
 
     def _is_ready(self) -> bool:
-        # 인증키는 선택 사항이다. 키 없이도 NEIS API는 일 1000건 한도로 동작한다.
+        # 학교만 등록되면 된다. NEIS API는 키 없이 일 1000건 한도로 동작한다.
         return self._config.is_configured
 
     def _sync_autostart(self) -> None:

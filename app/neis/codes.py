@@ -46,9 +46,9 @@ _MESSAGE_HINTS: tuple[tuple[tuple[str, ...], ResultKind], ...] = (
 )
 
 USER_MESSAGES: dict[ResultKind, str] = {
-    ResultKind.OK: "유효한 인증키입니다.",
+    ResultKind.OK: "정상적으로 조회했습니다.",
     ResultKind.NO_DATA: "해당하는 데이터가 없습니다.",
-    ResultKind.BAD_KEY: "인증키가 올바르지 않습니다. 다시 확인해 주세요.",
+    ResultKind.BAD_KEY: "NEIS 이용이 제한되었습니다. 잠시 후 다시 시도해 주세요.",
     ResultKind.QUOTA: "오늘 호출 한도를 초과했습니다. 내일 다시 시도해 주세요.",
     ResultKind.BAD_REQUEST: "요청이 올바르지 않습니다.",
     ResultKind.SERVER: "NEIS 서버에 문제가 있습니다. 잠시 후 다시 시도해 주세요.",

@@ -15,7 +15,7 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from . import APP_DISPLAY_NAME, APP_NAME
+from . import APP_DISPLAY_NAME, APP_NAME, VERSION
 from .config import data_dir
 from .controller import AppController
 from .resources.icons import app_icon
@@ -147,7 +147,7 @@ def main() -> int:
         _fix_macos_app_name(APP_DISPLAY_NAME)
 
     QCoreApplication.setApplicationName(APP_NAME)
-    QCoreApplication.setApplicationVersion("0.1.0")
+    QCoreApplication.setApplicationVersion(VERSION)
 
     app = QApplication(sys.argv)
     app.setApplicationDisplayName(APP_DISPLAY_NAME)
