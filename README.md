@@ -94,6 +94,71 @@ schoollunchmemo/
 
 ---
 
+## ⚙️ 동작 원리
+
+컨트롤러가 유일한 조율자입니다. UI 위젯은 시그널만 보내고, 네트워크는 워커 스레드에서만 돌며,
+결과는 다시 컨트롤러를 거쳐 화면으로 돌아옵니다.
+
+```mermaid
+graph TB
+    subgraph UI["UI (메인 스레드)"]
+        TRAY[트레이 아이콘]
+        NOTE[포스트잇 위젯]
+        CAL[달력 팝업]
+        DLG[설정 창]
+    end
+
+    CTRL[AppController<br/>controller.py]
+
+    subgraph DATA["데이터 계층"]
+        CACHE[날짜·월 캐시<br/>cache.py]
+        CLIENT[NeisClient<br/>neis/client.py]
+        PARSER[정규화<br/>neis/parser.py]
+    end
+
+    WORK[워커 스레드풀<br/>workers.py]
+    NEIS[(NEIS Open API)]
+
+    TRAY & NOTE & CAL & DLG -- "Qt 시그널" --> CTRL
+    CTRL -- "캐시 우선" --> CACHE
+    CTRL -- "미스 시" --> WORK
+    WORK --> CLIENT
+    CLIENT -- "HTTPS (인증키 없음)" --> NEIS
+    CTRL --> PARSER
+    CTRL -- "렌더" --> NOTE & CAL
+```
+
+하루치 조회는 이렇게 흐릅니다. 같은 날을 다시 보면 네트워크를 타지 않습니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자/자정 스케줄러
+    participant C as AppController
+    participant K as 캐시
+    participant N as NeisClient (워커)
+    participant API as NEIS API
+    participant S as 포스트잇
+
+    U->>C: refresh()
+    C->>K: load(학교, 날짜)
+    alt 캐시 있음
+        K-->>C: 저장된 rows
+    else 캐시 없음
+        C->>N: fetch_day() — 백그라운드
+        N->>API: 급식·학사일정 조회
+        API-->>N: JSON rows
+        N-->>C: 시그널로 전달 (UI 안 멈춤)
+        C->>K: save(rows)
+    end
+    C->>C: 파싱·알레르기 매칭<br/>(빈 식단 row는 걸러짐)
+    C->>S: 렌더
+```
+
+더 자세한 설계는 [PRD 7장](docs/PRD.md)에 있습니다.
+
+---
+
 ## 🧪 테스트
 
 ```bash
