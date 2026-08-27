@@ -13,6 +13,15 @@ import sys
 
 APP_NAME = "SchoolNote"
 
+# scripts/make_icons.py가 만든 아이콘. EXE 임베드는 Windows/macOS만 지원된다.
+ICON_ICNS = "assets/icon.icns"
+if sys.platform == "win32":
+    EXE_ICON = "assets/icon.ico"
+elif sys.platform == "darwin":
+    EXE_ICON = ICON_ICNS
+else:
+    EXE_ICON = None
+
 # PySide6 전체를 끌어오면 수백 MB가 된다. 쓰지 않는 모듈을 명시적으로 뺀다.
 EXCLUDES = [
     "PySide6.Qt3DAnimation",
@@ -89,6 +98,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # 콘솔 창을 띄우지 않는다
+    icon=EXE_ICON,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -110,7 +120,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name=f"{APP_NAME}.app",
-        icon=None,
+        icon=ICON_ICNS,
         bundle_identifier="com.schoolnote.app",
         info_plist={
             # 메뉴바 앱이므로 Dock에 띄우지 않는다

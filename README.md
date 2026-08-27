@@ -83,6 +83,8 @@ schoollunchmemo/
 │  └─ resources/
 │     ├─ icons.py          # 아이콘 생성 (바이너리 없음)
 │     └─ theme.py          # 포스트잇 색상 팔레트
+├─ assets/                 # 실행 파일용 아이콘 (.ico/.icns)
+├─ scripts/                # 아이콘 생성 등 개발 보조 스크립트
 ├─ docs/                   # GitHub Pages 홈페이지
 ├─ tests/
 ├─ run.bat                 # Windows 실행 스크립트
@@ -199,7 +201,7 @@ NEIS 교육정보 개방 포털 공개 API (인증키 불필요, 일 1000건 제
 - **v0.1 (MVP)** — 포스트잇 위젯, 트레이, 학교 검색, 자동 갱신, Windows 빌드
 - **v0.2** — 표시 옵션 전체, 자동 시작, 실행 스크립트, macOS/Linux 빌드
 - **v0.3** — 달력으로 날짜 고르기, 정보 탭, 인증키 제거, 글자 크기 설정
-- **백로그** — 앱 아이콘, 여러 학교 등록, 내일 급식 미리보기, 특정 메뉴 알림, 주간 요약
+- **백로그** — 여러 학교 등록, 내일 급식 미리보기, 특정 메뉴 알림, 주간 요약
 
 진행 상황은 [이슈](https://github.com/progh2/schoollunchmemo/issues)와
 [마일스톤](https://github.com/progh2/schoollunchmemo/milestones)에서 볼 수 있습니다.

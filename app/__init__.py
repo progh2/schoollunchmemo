@@ -10,7 +10,7 @@ APP_NAME = "SchoolNote"
 #: 화면에 보이는 이름. 이쪽은 자유롭게 바꿀 수 있다.
 APP_DISPLAY_NAME = "급식쪽지"
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 NEIS_PORTAL_URL = "https://open.neis.go.kr"
 REPO_URL = "https://github.com/progh2/schoollunchmemo"

@@ -609,7 +609,7 @@ sequenceDiagram
 
 - [x] 자동 시작 (부팅 시 실행) — Windows 레지스트리 검증 완료, macOS·Linux는 파일 생성까지만 검증
 - [x] macOS / Linux 빌드 — GitHub Actions 3플랫폼 자동 빌드·릴리스
-- [ ] 앱 아이콘 파일(.ico/.icns) 생성 및 실행 파일에 임베드 (#4)
+- [x] 앱 아이콘 파일(.ico/.icns) 생성 및 실행 파일에 임베드 (#4)
 
 ### v0.3 — 릴리스 완료
 
