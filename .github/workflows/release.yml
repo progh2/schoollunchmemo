@@ -114,5 +114,5 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             SchoolNote-*.zip \
             SchoolNote-*.tar.gz \
-            --title "학교쪽지 ${{ github.ref_name }}" \
+            --title "급식쪽지 ${{ github.ref_name }}" \
             --generate-notes

@@ -162,7 +162,7 @@ def main() -> int:
 
     server = _claim_single_instance()
     if server is None:
-        print("학교쪽지가 이미 실행 중입니다.", file=sys.stderr)
+        print("급식쪽지가 이미 실행 중입니다.", file=sys.stderr)
         return 0
 
     controller = AppController(app)
