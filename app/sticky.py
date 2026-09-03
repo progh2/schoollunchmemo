@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
+import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import date
 from html import escape
-
-import sys
 
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
 from . import allergens
 from .neis.models import MealMenu, ScheduleEvent
 from .resources.theme import colors
+
+log = logging.getLogger(__name__)
 
 #: 알레르기 경고 색. 파스텔 배경 어디에서도 눈에 띈다.
 DANGER_COLOR = "#C0261C"
@@ -97,12 +99,10 @@ class StickyNote(QWidget):
         self._view: NoteView | None = None
         self._screen_hooked = False
 
-        # macOS에서 Tool 플래그는 앱 포커스를 잃으면 창을 자동으로 숨긴다.
-        # Windows에서는 Tool이 작업표시줄·Alt+Tab 제외 역할만 하므로 유지한다.
-        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-        if sys.platform != "darwin":
-            flags |= Qt.WindowType.Tool
-        self.setWindowFlags(flags)
+        # 창 플래그는 '항상 위에 표시' 설정에 따라 달라진다. 바꾸는 경로는
+        # set_always_on_top() 하나뿐이고, 여기서는 기본값(켜짐)으로 시작한다.
+        self._always_on_top = True
+        self.setWindowFlags(self._compose_flags(True))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedWidth(NOTE_WIDTH)
 
@@ -542,11 +542,77 @@ class StickyNote(QWidget):
 
     # -------------------------------------------------------------- 창 동작
 
+    @staticmethod
+    def _compose_flags(on_top: bool) -> Qt.WindowType:
+        """창 플래그 전체 조합.
+
+        일부만 바꾸면(setWindowFlag) 나머지 플래그가 함께 날아갈 수 있어
+        항상 전체를 다시 세운다.
+        """
+        flags = Qt.WindowType.FramelessWindowHint
+        # macOS에서 Tool 플래그는 앱 포커스를 잃으면 창을 자동으로 숨긴다.
+        # Windows/Linux에서는 작업표시줄·Alt+Tab 제외 역할만 하므로 유지한다.
+        if sys.platform != "darwin":
+            flags |= Qt.WindowType.Tool
+        if on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        return flags
+
     def set_always_on_top(self, on_top: bool) -> None:
+        on_top = bool(on_top)
+        if on_top == self._always_on_top:
+            return  # 같은 값으로 창을 다시 만들 이유가 없다
+        self._always_on_top = on_top
+
         was_visible = self.isVisible()
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on_top)
+        self.setWindowFlags(self._compose_flags(on_top))
         if was_visible:
             self.show()  # 플래그 변경 후에는 다시 show 해야 반영된다
+        self._sync_native_topmost(on_top)
+
+    def _sync_native_topmost(self, on_top: bool) -> None:
+        """Windows에서 네이티브 최상단 상태를 직접 되돌린다 (#26).
+
+        Qt는 WindowStaysOnTopHint를 켤 때만 SetWindowPos(HWND_TOPMOST)를 부르고,
+        끌 때 HWND_NOTOPMOST로 되돌려 주지 않는다. 그래서 플래그만 지우면
+        WS_EX_TOPMOST가 남아 앱을 다시 켜기 전까지 계속 다른 창 위에 뜬다.
+        """
+        if sys.platform != "win32":
+            return
+        if not self.testAttribute(Qt.WidgetAttribute.WA_WState_Created):
+            return  # 네이티브 창이 아직 없다. 만들 때 플래그대로 반영된다.
+
+        HWND_TOPMOST = -1
+        HWND_NOTOPMOST = -2
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+        SWP_NOACTIVATE = 0x0010
+
+        try:
+            import ctypes
+
+            set_window_pos = ctypes.windll.user32.SetWindowPos
+            set_window_pos.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint,
+            ]
+            set_window_pos.restype = ctypes.c_bool
+            set_window_pos(
+                ctypes.c_void_p(int(self.winId())),
+                ctypes.c_void_p(HWND_TOPMOST if on_top else HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+            )
+        except Exception as exc:  # noqa: BLE001 - 실패해도 앱은 계속 돌아야 한다
+            log.debug("최상단 상태를 되돌리지 못했습니다: %s", exc)
 
     def restore_position(self, x: int | None, y: int | None) -> None:
         if x is None or y is None:
