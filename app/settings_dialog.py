@@ -8,9 +8,11 @@ NEIS API는 인증키 없이 공개 접근(일 1000건 제한)으로 호출한�
 from __future__ import annotations
 
 import logging
+from html import escape
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSlider,
     QTabWidget,
@@ -43,7 +46,7 @@ from . import (
     REPO_URL,
     VERSION,
 )
-from . import autostart
+from . import autostart, updater
 from .allergens import ALLERGENS
 from .config import Config
 from .neis import NeisClient, NeisError
@@ -59,6 +62,15 @@ _WARN_COLOR = "#B06000"
 _MUTED_COLOR = "#6B6B6B"
 
 _COLOR_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "연두"}
+
+
+class _ProgressRelay(QObject):
+    """워커 스레드의 진행률을 UI 스레드로 옮기는 통로.
+
+    워커에서 위젯을 직접 건드리면 안 되므로 시그널 한 번을 거친다.
+    """
+
+    progress = Signal(int, int)
 
 
 class SettingsDialog(QDialog):
@@ -353,6 +365,8 @@ class SettingsDialog(QDialog):
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
+        layout.addWidget(self._build_update_box(tab))
+
         project = QGroupBox("프로젝트", tab)
         project_form = QFormLayout(project)
         project_form.addRow(
@@ -393,6 +407,146 @@ class SettingsDialog(QDialog):
 
         layout.addStretch(1)
         return tab
+
+    # ------------------------------------------------------------ 업데이트
+
+    def _build_update_box(self, parent: QWidget) -> QGroupBox:
+        """[업데이트 확인] 버튼. 누를 때만 릴리스를 조회한다 (#27)."""
+        box = QGroupBox("업데이트", parent)
+        box_layout = QVBoxLayout(box)
+
+        row = QHBoxLayout()
+        self.update_button = QPushButton("업데이트 확인", box)
+        self.update_button.clicked.connect(self._on_check_update)
+        row.addWidget(self.update_button)
+        row.addStretch(1)
+        box_layout.addLayout(row)
+
+        self.update_status = QLabel("", box)
+        self.update_status.setWordWrap(True)
+        self.update_status.setOpenExternalLinks(True)
+        self.update_status.setVisible(False)
+        box_layout.addWidget(self.update_status)
+
+        self.update_progress = QProgressBar(box)
+        self.update_progress.setVisible(False)
+        box_layout.addWidget(self.update_progress)
+        return box
+
+    def _set_update_status(self, text: str, color: str = _MUTED_COLOR) -> None:
+        self.update_status.setStyleSheet(f"color: {color};")
+        self.update_status.setText(text)
+        self.update_status.setVisible(bool(text))
+
+    def _on_check_update(self) -> None:
+        self.update_button.setEnabled(False)
+        self.update_progress.setVisible(False)
+        self._set_update_status("최신 버전을 확인하는 중…")
+        submit(
+            updater.fetch_latest,
+            on_ok=self._on_update_checked,
+            on_err=self._on_update_failed,
+        )
+
+    def _on_update_checked(self, release: updater.Release) -> None:
+        if not release.is_update:
+            self.update_button.setEnabled(True)
+            self._set_update_status(f"최신 버전입니다 (v{VERSION}).", _OK_COLOR)
+            return
+
+        blocked = updater.blocked_reason()
+        if blocked:
+            self.update_button.setEnabled(True)
+            self._set_update_status(
+                f"새 버전 {escape(release.tag)}이(가) 있습니다. {escape(blocked)}"
+                f"<br/><a href='{escape(release.page_url, quote=True)}'>"
+                "릴리스 페이지 열기</a>",
+                _WARN_COLOR,
+            )
+            return
+
+        size = f" · {release.size_text}" if release.size_text else ""
+        if not self._confirm_update(release, size):
+            self.update_button.setEnabled(True)
+            self._set_update_status(
+                f"새 버전 {escape(release.tag)}이(가) 있습니다. "
+                "나중에 다시 확인해 주세요.",
+                _WARN_COLOR,
+            )
+            return
+
+        self._start_update(release)
+
+    def _confirm_update(self, release: updater.Release, size: str) -> bool:
+        notes = release.notes
+        if len(notes) > 600:
+            notes = notes[:600].rstrip() + "…"
+
+        box = QMessageBox(self)
+        box.setWindowTitle("업데이트")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(
+            f"새 버전 {release.tag}이(가) 있습니다 (지금 v{VERSION}{size}).\n"
+            "지금 설치할까요? 설치가 끝나면 앱이 다시 열립니다."
+        )
+        if notes:
+            box.setDetailedText(notes)
+        install = box.addButton("지금 설치", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is install
+
+    def _start_update(self, release: updater.Release) -> None:
+        root = updater.install_root()
+        if root is None:  # blocked_reason에서 걸러지지만 방어적으로 둔다
+            self._on_update_failed(updater.UpdateError("설치 위치를 찾지 못했습니다."))
+            return
+
+        self.update_progress.setRange(0, 100)
+        self.update_progress.setValue(0)
+        self.update_progress.setVisible(True)
+        self._set_update_status(f"{escape(release.tag)} 내려받는 중…")
+
+        relay = _ProgressRelay(self)
+        relay.progress.connect(self._on_update_progress)
+        submit(
+            updater.download,
+            release,
+            root,
+            relay.progress.emit,
+            on_ok=lambda staged: self._on_update_downloaded(staged, root),
+            on_err=self._on_update_failed,
+        )
+
+    def _on_update_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            self.update_progress.setRange(0, 100)
+            self.update_progress.setValue(min(100, int(done * 100 / total)))
+        else:  # 길이를 모르면 무한 진행 표시
+            self.update_progress.setRange(0, 0)
+
+    def _on_update_downloaded(self, staged, root) -> None:
+        self.update_progress.setValue(100)
+        try:
+            updater.launch_replacer(staged, root)
+        except updater.UpdateError as exc:
+            self._on_update_failed(exc)
+            return
+        self._set_update_status(
+            "설치를 시작합니다. 앱이 곧 종료됐다가 다시 열립니다.", _OK_COLOR
+        )
+        # 도우미 스크립트는 이 프로세스가 사라져야 폴더를 교체할 수 있다.
+        QTimer.singleShot(600, QApplication.quit)
+
+    def _on_update_failed(self, error: Exception) -> None:
+        self.update_button.setEnabled(True)
+        self.update_progress.setVisible(False)
+        message = str(error) or "업데이트를 확인하지 못했습니다."
+        self._set_update_status(
+            f"{escape(message)}<br/>"
+            f"<a href='{updater.RELEASES_URL}'>릴리스 페이지 열기</a>",
+            _ERROR_COLOR,
+        )
 
     @staticmethod
     def _link(url: str, text: str, parent: QWidget) -> QLabel:

@@ -548,3 +548,130 @@ def test_tray_builds(qapp):
         assert not tray.icon().isNull()
     finally:
         tray.deleteLater()
+
+
+class TestAlwaysOnTop:
+    """'항상 위에 표시'를 끄면 힌트가 실제로 빠져야 한다 (#26)."""
+
+    def test_default_is_on_top(self, note):
+        from PySide6.QtCore import Qt
+
+        assert note.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+
+    def test_turning_off_clears_the_hint(self, note):
+        from PySide6.QtCore import Qt
+
+        note.set_always_on_top(False)
+        assert not (note.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+
+    def test_toggling_back_restores_the_hint(self, note):
+        from PySide6.QtCore import Qt
+
+        note.set_always_on_top(False)
+        note.set_always_on_top(True)
+        assert note.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+
+    def test_other_flags_survive_the_toggle(self, note):
+        """플래그를 통째로 다시 세우므로 Frameless/Tool이 날아가면 안 된다."""
+        from PySide6.QtCore import Qt
+
+        had_tool = bool(note.windowFlags() & Qt.WindowType.Tool)
+        note.set_always_on_top(False)
+
+        flags = note.windowFlags()
+        assert flags & Qt.WindowType.FramelessWindowHint
+        assert bool(flags & Qt.WindowType.Tool) is had_tool
+
+
+def _run_task_now(fn, *args, on_ok=None, on_err=None, **kwargs):
+    """워커 대신 그 자리에서 실행한다. 테스트에서 스레드를 기다리지 않으려고."""
+    try:
+        result = fn(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - 실패 경로도 확인한다
+        if on_err is not None:
+            on_err(exc)
+    else:
+        if on_ok is not None:
+            on_ok(result)
+
+
+def _fake_release(tag):
+    from app import updater
+
+    return updater.Release(
+        tag=tag,
+        notes="바뀐 것",
+        page_url="https://example.invalid/release",
+        asset_name="SchoolNote.zip",
+        asset_url="https://example.invalid/SchoolNote.zip",
+        asset_size=1024,
+    )
+
+
+class TestUpdateCheck:
+    """정보 탭의 [업데이트 확인] (#27)."""
+
+    def _dialog(self, monkeypatch):
+        from app.settings_dialog import SettingsDialog
+
+        monkeypatch.setattr("app.settings_dialog.submit", _run_task_now)
+        dialog = SettingsDialog(Config())
+        dialog.show_tab("info")
+        return dialog
+
+    def test_button_exists_and_does_not_check_on_open(self, qapp, monkeypatch):
+        from app import updater
+
+        calls = []
+        monkeypatch.setattr(
+            updater, "fetch_latest", lambda *a, **k: calls.append(1) or _fake_release("v0.0.1")
+        )
+        dialog = self._dialog(monkeypatch)
+        try:
+            assert dialog.update_button.text() == "업데이트 확인"
+            assert calls == []  # 눌러야만 조회한다
+        finally:
+            dialog.deleteLater()
+
+    def test_same_version_reports_up_to_date(self, qapp, monkeypatch):
+        from app import VERSION, updater
+
+        monkeypatch.setattr(updater, "fetch_latest", lambda *a, **k: _fake_release(f"v{VERSION}"))
+        dialog = self._dialog(monkeypatch)
+        try:
+            dialog._on_check_update()
+            assert "최신 버전입니다" in dialog.update_status.text()
+            assert dialog.update_button.isEnabled()
+        finally:
+            dialog.deleteLater()
+
+    def test_new_version_from_source_run_points_at_releases(self, qapp, monkeypatch):
+        """소스에서 돌 때는 자동 설치 대신 릴리스 페이지로 보낸다."""
+        from app import updater
+
+        monkeypatch.setattr(updater, "fetch_latest", lambda *a, **k: _fake_release("v99.9.9"))
+        dialog = self._dialog(monkeypatch)
+        try:
+            dialog._on_check_update()
+            text = dialog.update_status.text()
+            assert "v99.9.9" in text
+            assert "릴리스 페이지" in text
+            assert dialog.update_button.isEnabled()
+        finally:
+            dialog.deleteLater()
+
+    def test_failure_shows_reason_and_reenables_button(self, qapp, monkeypatch):
+        from app import updater
+
+        def boom(*_args, **_kwargs):
+            raise updater.UpdateError("업데이트 서버에 연결하지 못했습니다.")
+
+        monkeypatch.setattr(updater, "fetch_latest", boom)
+        dialog = self._dialog(monkeypatch)
+        try:
+            dialog._on_check_update()
+            assert "연결하지 못했습니다" in dialog.update_status.text()
+            assert dialog.update_button.isEnabled()
+            assert dialog.update_progress.isHidden() or not dialog.update_progress.isVisible()
+        finally:
+            dialog.deleteLater()
