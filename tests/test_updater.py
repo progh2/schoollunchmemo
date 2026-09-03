@@ -142,6 +142,7 @@ class TestFetchLatest:
 
 
 class TestExtract:
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows에는 실행 비트가 없다")
     def test_zip_keeps_executable_bit(self, tmp_path):
         """zipfile 기본 동작은 권한을 버린다. 잃으면 새 앱이 실행되지 않는다."""
         archive = tmp_path / "app.zip"
@@ -210,6 +211,9 @@ class TestInstallLocation:
         assert reason is not None
         assert "소스" in reason
 
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Windows에서는 chmod로 폴더를 잠글 수 없다"
+    )
     def test_readonly_folder_is_blocked(self, tmp_path):
         root = tmp_path / "SchoolNote"
         root.mkdir()
