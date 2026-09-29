@@ -76,12 +76,12 @@ def test_step_to_yesterday_and_tomorrow(controller):
     yesterday = date.today() - timedelta(days=1)
     assert controller._view_day == yesterday
     assert f"{yesterday.day}일의밥" in controller.note.body.text()
-    assert "어제" in controller.note.date_label.text()
+    assert "어제" in controller.note.footer_label.text()  # 상대 표시는 꼬리말 (#35)
 
     controller.step_day(2)
     tomorrow = date.today() + timedelta(days=1)
     assert controller._view_day == tomorrow
-    assert "내일" in controller.note.date_label.text()
+    assert "내일" in controller.note.footer_label.text()
 
 
 def test_today_button_appears_only_off_today(controller):

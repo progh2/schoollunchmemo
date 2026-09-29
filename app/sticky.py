@@ -139,6 +139,7 @@ class StickyNote(QWidget):
         self.date_label = QLabel(self.card)
         self.date_label.setObjectName("date")
         self.date_label.setTextFormat(Qt.TextFormat.RichText)
+        self.date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.date_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.date_label.setToolTip("날짜를 눌러 달력에서 고르기")
         header.addWidget(self.date_label)
@@ -150,15 +151,24 @@ class StickyNote(QWidget):
         header.addStretch(1)
 
         # 다른 날을 보고 있을 때만 나타난다. 돌아올 길을 항상 열어둔다.
-        self.today_button = QPushButton("오늘", self.card)
+        # › 바로 옆에 두면 › 를 연달아 누르다 이 버튼을 누르게 된다 (#35).
+        # 그래서 머리줄이 아니라 꼬리말 줄 왼쪽에 둔다.
+        self.today_button = QPushButton("오늘로", self.card)
         self.today_button.setObjectName("chip")
+        self.today_button.setToolTip("오늘 급식으로 돌아가기")
         self.today_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.today_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.today_button.setFlat(True)
-        self.today_button.setFixedHeight(22)
+        self.today_button.setFixedHeight(20)
         self.today_button.clicked.connect(self.todayRequested)
         self.today_button.hide()
-        header.addWidget(self.today_button)
+
+        # 숨겨져 있어도 자리를 지킨다. 마우스를 올릴 때마다 화살표가 나타나며
+        # 날짜가 밀리거나, 꼬리말 줄 높이가 들쭉날쭉하지 않게 한다.
+        for steady in (self.prev_button, self.next_button, self.today_button):
+            policy = steady.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            steady.setSizePolicy(policy)
 
         self.refresh_button = self._tool_button("⟳", "지금 새로고침")
         self.refresh_button.clicked.connect(self.refreshRequested)
@@ -212,8 +222,16 @@ class StickyNote(QWidget):
 
         self.footer_label = QLabel(self.card)
         self.footer_label.setObjectName("footer")
-        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        inner.addWidget(self.footer_label)
+        self.footer_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.footer_label.setTextFormat(Qt.TextFormat.RichText)
+        self._footer_row = QHBoxLayout()
+        self._footer_row.setSpacing(6)
+        self._footer_row.addWidget(self.today_button)
+        self._footer_row.addStretch(1)
+        self._footer_row.addWidget(self.footer_label)
+        inner.addLayout(self._footer_row)
 
         self._set_buttons_visible(False)
 
@@ -222,7 +240,7 @@ class StickyNote(QWidget):
         button.setObjectName("tool")
         button.setToolTip(tooltip)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedSize(22, 22)
+        button.setFixedSize(20, 22)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setFlat(True)
         return button
@@ -322,22 +340,58 @@ class StickyNote(QWidget):
             meal.origin or meal.nutrition for meal in view.meals
         )
         palette = colors(self._color)
-        text = (
+        self._fit_date_label()
+        self.date_label.setText(
             f"{view.day.month}월 {view.day.day}일 "
             f"({_WEEKDAYS[view.day.weekday()]})"
         )
-        relative = _relative_label(view.day)
-        if relative and not view.is_today:
-            text += (
-                f"<span style='color:{palette['accent']}; font-size:9pt'>"
-                f" · {relative}</span>"
-            )
-        self.date_label.setText(text)
         self.today_button.setVisible(not view.is_today)
         self.body.setText(self._build_html(view))
-        self.footer_label.setText(view.footer)
-        self.footer_label.setVisible(bool(view.footer))
+
+        # '내일'·'모레' 같은 상대 표시는 꼬리말로 보낸다. 머리줄에 붙이면
+        # 폭을 넘겨 요일이 잘리고 › 버튼이 밀린다 (#35).
+        footer = view.footer
+        relative = _relative_label(view.day)
+        if relative and not view.is_today:
+            tag = (
+                f"<span style='color:{palette['accent']}'>{relative}</span>"
+            )
+            footer = f"{tag} · {footer}" if footer else tag
+        self.footer_label.setText(footer)
         self._refit()
+
+    def _fit_date_label(self) -> None:
+        """날짜 칸 폭을 가장 긴 날짜에 맞춰 고정한다.
+
+        날마다 글자 폭이 달라 칸이 줄었다 늘었다 하면 › 버튼이 따라 움직인다.
+        글자 크기 설정이 바뀔 수 있으므로 그릴 때마다 다시 잰다.
+        """
+        self.date_label.ensurePolished()
+        metrics = self.date_label.fontMetrics()
+        widest = max(
+            metrics.horizontalAdvance(f"12월 {day}일 ({weekday})")
+            for day in (28, 30, 31)
+            for weekday in _WEEKDAYS
+        )
+        self.date_label.setFixedWidth(widest + 4)
+
+        # 글자를 키우면 머리줄이 기본 폭에 안 들어간다. 겹치게 두지 말고
+        # 포스트잇을 그만큼 넓힌다.
+        header = self.card.layout().itemAt(0).layout()
+        header.invalidate()  # 방금 바꾼 날짜 칸 폭을 최소 크기 계산에 반영한다
+        card_margins = self.card.layout().contentsMargins()
+        outer = self.layout().contentsMargins()
+        needed = (
+            header.minimumSize().width()
+            + card_margins.left() + card_margins.right()
+            + outer.left() + outer.right()
+        )
+        width = max(NOTE_WIDTH, needed)
+        if width != self.width():
+            self.setFixedWidth(width)
+        # 날짜 칸 폭이 바뀌었으면 다음 이벤트를 기다리지 말고 바로 다시 배치한다.
+        # 그 사이 한 프레임이라도 버튼이 겹쳐 그려지지 않게 한다.
+        self.layout().activate()
 
     def _chrome_height(self) -> int:
         """본문을 뺀 나머지(날짜줄·구분선·꼬리말·여백)가 차지하는 높이."""
@@ -351,11 +405,14 @@ class StickyNote(QWidget):
 
         height = outer_top + outer_bottom + inner_top + inner_bottom
         height += CARD_BORDER * 2
-        height += self.date_label.sizeHint().height()
+        # 머리줄·꼬리말 줄은 레이아웃에게 직접 묻는다. 버튼과 글자 중 큰 쪽이
+        # 줄 높이가 되는데, 그걸 손으로 맞추면 몇 px씩 어긋난다.
+        header = inner.itemAt(0).layout()
+        height += header.sizeHint().height()
         height += self.rule.height()
-        height += spacing * 2
-        if self.footer_label.text():
-            height += self.footer_label.sizeHint().height() + spacing
+        # 꼬리말 줄은 '오늘로' 버튼이 자리를 지키므로 늘 같은 높이다
+        height += self._footer_row.sizeHint().height()
+        height += spacing * 3
         return height
 
     def _refit(self) -> None:

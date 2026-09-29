@@ -758,3 +758,68 @@ def test_school_list_selection_is_soft_not_accent_blue(qapp):
     finally:
         dialog.close()
         dialog.deleteLater()
+
+
+class TestStableHeader:
+    """날짜를 넘겨도 머리줄이 흔들리지 않아야 한다 (#35)."""
+
+    @staticmethod
+    def _render(note, offset):
+        from datetime import timedelta
+
+        day = date.today() + timedelta(days=offset)
+        note.render_view(
+            NoteView(day=day, is_today=offset == 0, message="x", footer="22:59 갱신됨")
+        )
+        return day
+
+    def test_next_button_never_moves(self, note, qapp):
+        note.show()
+        note._set_buttons_visible(True)
+        spots = set()
+        for offset in (0, 1, 2, 3, 30, -1):
+            self._render(note, offset)
+            qapp.processEvents()
+            spots.add(note.next_button.geometry().x())
+        assert len(spots) == 1
+
+    def test_weekday_is_always_shown(self, note):
+        from app.sticky import _WEEKDAYS
+
+        for offset in (0, 1, 2):
+            day = self._render(note, offset)
+            assert f"({_WEEKDAYS[day.weekday()]})" in note.date_label.text()
+
+    def test_relative_day_goes_to_footer(self, note):
+        self._render(note, 1)
+        assert "내일" not in note.date_label.text()
+        assert "내일" in note.footer_label.text()
+        assert "22:59 갱신됨" in note.footer_label.text()
+
+    def test_today_button_is_away_from_arrows(self, note, qapp):
+        """'오늘로'는 머리줄이 아니라 꼬리말 줄에 있다. › 연타로 누를 일이 없다."""
+        note.show()
+        self._render(note, 1)
+        qapp.processEvents()
+        assert note.today_button.isVisible()
+        assert note.today_button.geometry().top() > note.rule.geometry().bottom()
+
+    @pytest.mark.parametrize("size", [8, 10, 12, 14, 16])
+    def test_header_widgets_never_overlap(self, note, qapp, size):
+        note.show()
+        note._set_buttons_visible(True)
+        note.set_font_size(size)
+        self._render(note, 1)
+        qapp.processEvents()
+        row = [
+            note.prev_button,
+            note.date_label,
+            note.next_button,
+            note.refresh_button,
+            note.settings_button,
+            note.hide_button,
+        ]
+        rects = [widget.geometry() for widget in row]
+        for left, right in zip(rects, rects[1:]):
+            assert left.right() < right.left()
+        assert rects[-1].right() <= note.card.contentsRect().right()
