@@ -57,34 +57,74 @@ jobs:
       - name: 실행 파일 빌드
         run: pyinstaller schoolnote.spec --noconfirm
 
-      - name: 산출물 압축 (Windows)
+      # 받자마자 꺼지는 빌드(숨은 import 누락 등)를 릴리스 전에 잡는다.
+      # 10초 뒤에도 살아 있으면 정상으로 본다.
+      - name: 실행 확인 (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $exe = "dist/SchoolNote/SchoolNote.exe"
+          $exe = "dist/SchoolNote.exe"
           if (-not (Test-Path $exe)) { throw "빌드 산출물이 없습니다: $exe" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "실행 직후 종료됐습니다 (코드 $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Output "10초 동안 정상 실행"
+
+      - name: 실행 확인 (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            bin="dist/SchoolNote.app/Contents/MacOS/SchoolNote"
+          else
+            bin="dist/SchoolNote"
+          fi
+          if [ ! -x "$bin" ]; then echo "빌드 산출물이 없습니다: $bin" && exit 1; fi
+          QT_QPA_PLATFORM=offscreen "$bin" &
+          pid=$!
+          sleep 10
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            echo "10초 동안 정상 실행"
+          else
+            wait "$pid"; code=$?
+            echo "실행 직후 종료됐습니다 (코드 $code)" && exit 1
+          fi
+
+      # 산출물 이름의 windows / macos / linux 와 확장자는 updater.py가
+      # 플랫폼 파일을 고르는 기준이다. 바꾸면 자동 업데이트가 끊긴다.
+      - name: 산출물 준비 (Windows — .exe 하나)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
           $version = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev" }
-          $asset = "SchoolNote-$version-windows-x64.zip"
-          Compress-Archive -Path "dist/SchoolNote/*" -DestinationPath $asset -Force
-          Write-Output ("압축: {0} ({1:N1} MB)" -f $asset, ((Get-Item $asset).Length / 1MB))
+          $asset = "SchoolNote-$version-windows-x64.exe"
+          Copy-Item "dist/SchoolNote.exe" $asset
+          Write-Output ("준비: {0} ({1:N1} MB)" -f $asset, ((Get-Item $asset).Length / 1MB))
           "ASSET=$asset" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: 산출물 압축 (macOS)
+      - name: 산출물 준비 (macOS — .dmg)
         if: runner.os == 'macOS'
         run: |
-          if [ ! -d "dist/SchoolNote.app" ]; then echo "빌드 산출물이 없습니다" && exit 1; fi
           version=$([ "$GITHUB_REF_TYPE" = "tag" ] && echo "$GITHUB_REF_NAME" || echo "dev")
-          asset="SchoolNote-${version}-macos.zip"
-          cd dist && zip -r "../${asset}" SchoolNote.app
+          asset="SchoolNote-${version}-macos.dmg"
+          # 열었을 때 앱 옆에 Applications 바로가기가 보여 끌어다 놓기만 하면 된다
+          mkdir dmg-root
+          ditto dist/SchoolNote.app dmg-root/SchoolNote.app
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "급식쪽지" -srcfolder dmg-root -ov -format UDZO "$asset"
+          echo "준비: $asset ($(du -h "$asset" | cut -f1))"
           echo "ASSET=$asset" >> "$GITHUB_ENV"
 
-      - name: 산출물 압축 (Linux)
+      - name: 산출물 준비 (Linux — 실행 파일 하나)
         if: runner.os == 'Linux'
         run: |
-          if [ ! -d "dist/SchoolNote" ]; then echo "빌드 산출물이 없습니다" && exit 1; fi
           version=$([ "$GITHUB_REF_TYPE" = "tag" ] && echo "$GITHUB_REF_NAME" || echo "dev")
-          asset="SchoolNote-${version}-linux-x64.tar.gz"
-          tar -czf "$asset" -C dist SchoolNote
+          asset="SchoolNote-${version}-linux-x64"
+          cp dist/SchoolNote "$asset"
+          chmod +x "$asset"
+          echo "준비: $asset ($(du -h "$asset" | cut -f1))"
           echo "ASSET=$asset" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
@@ -112,7 +152,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            SchoolNote-*.zip \
-            SchoolNote-*.tar.gz \
+            SchoolNote-*-windows-x64.exe \
+            SchoolNote-*-macos.dmg \
+            SchoolNote-*-linux-x64 \
             --title "급식쪽지 ${{ github.ref_name }}" \
             --generate-notes

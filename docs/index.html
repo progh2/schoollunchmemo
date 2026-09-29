@@ -454,7 +454,7 @@
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-title">파일 받기</div>
-      <p class="step-desc">아래에서 내 컴퓨터에 맞는 파일을 받아 압축을 풀어요.</p>
+      <p class="step-desc">아래에서 내 컴퓨터에 맞는 파일 하나만 받아요. 압축 풀 필요 없이 바로 실행!</p>
     </div>
     <div class="step">
       <div class="step-num">2</div>
@@ -482,17 +482,17 @@
     <div class="dl-list" id="platformList">
       <a class="dl-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank" rel="noopener">
         <span class="dl-icon">🪟</span>
-        <span class="dl-name">Windows<br><span class="dl-sub">Windows 10/11 (x64)</span></span>
+        <span class="dl-name">Windows<br><span class="dl-sub">.exe 받아서 더블클릭</span></span>
         <span class="dl-arrow">↓</span>
       </a>
       <a class="dl-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank" rel="noopener">
         <span class="dl-icon">🍎</span>
-        <span class="dl-name">macOS<br><span class="dl-sub">macOS 12 이상</span></span>
+        <span class="dl-name">macOS<br><span class="dl-sub">.dmg 열고 Applications로 쏙</span></span>
         <span class="dl-arrow">↓</span>
       </a>
       <a class="dl-row" href="https://github.com/progh2/schoollunchmemo/releases/latest" target="_blank" rel="noopener">
         <span class="dl-icon">🐧</span>
-        <span class="dl-name">Linux<br><span class="dl-sub">x64 (tar.gz)</span></span>
+        <span class="dl-name">Linux<br><span class="dl-sub">chmod +x 후 실행</span></span>
         <span class="dl-arrow">↓</span>
       </a>
     </div>
@@ -520,6 +520,10 @@
     <details>
       <summary>🔐 개인정보를 수집하나요?</summary>
       <p>전혀요. 별도 서버가 없어서 앱이 교육부 NEIS에 직접 물어보고, 설정은 내 컴퓨터에만 저장돼요.</p>
+    </details>
+    <details>
+      <summary>😳 실행하니까 경고 창이 떠요!</summary>
+      <p>코드 서명이 없는 무료 앱이라 처음 한 번 뜨는 경고예요. Windows는 <b>추가 정보 → 실행</b>, macOS는 앱을 <b>우클릭 → 열기</b>를 누르면 돼요. 다음부터는 바로 열려요.</p>
     </details>
     <details>
       <summary>📱 휴대폰에서도 되나요?</summary>
@@ -576,12 +580,15 @@
     const tag = d.tag_name || '';
     const assets = d.assets || [];
     const platforms = [
-      { key: 'windows', icon: '🪟', name: 'Windows', sub: 'Windows 10/11 (x64)' },
-      { key: 'macos',   icon: '🍎', name: 'macOS',   sub: 'macOS 12 이상' },
-      { key: 'linux',   icon: '🐧', name: 'Linux',   sub: 'x64 (tar.gz)' },
+      { key: 'windows', ext: '.exe',       icon: '🪟', name: 'Windows', sub: '.exe 받아서 더블클릭' },
+      { key: 'macos',   ext: '.dmg',       icon: '🍎', name: 'macOS',   sub: '.dmg 열고 Applications로 쏙' },
+      { key: 'linux',   ext: '-linux-x64', icon: '🐧', name: 'Linux',   sub: 'chmod +x 후 실행' },
     ];
     const rows = platforms.map(p => {
-      const a = assets.find(x => x.name.toLowerCase().includes(p.key));
+      const a = assets.find(x => {
+        const n = x.name.toLowerCase();
+        return n.includes(p.key) && n.endsWith(p.ext);
+      });
       const url = a ? a.browser_download_url : 'https://github.com/progh2/schoollunchmemo/releases/latest';
       const size = a ? ` · ${(a.size / 1024 / 1024).toFixed(0)}MB` : '';
       return `<a class="dl-row" href="${url}" target="_blank" rel="noopener">

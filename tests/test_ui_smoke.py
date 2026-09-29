@@ -602,7 +602,7 @@ def _fake_release(tag):
         tag=tag,
         notes="바뀐 것",
         page_url="https://example.invalid/release",
-        asset_name="SchoolNote.zip",
+        asset_name="SchoolNote.exe",
         asset_url="https://example.invalid/SchoolNote.zip",
         asset_size=1024,
     )

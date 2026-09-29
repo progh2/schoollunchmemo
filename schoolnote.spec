@@ -5,6 +5,11 @@
 
     pyinstaller schoolnote.spec
 
+산출물 (#29)
+    Windows  dist/SchoolNote.exe      파일 하나. 받아서 바로 실행한다
+    Linux    dist/SchoolNote          파일 하나. chmod +x 후 실행한다
+    macOS    dist/SchoolNote.app      .app은 원래 폴더다. release.yml이 .dmg로 싼다
+
 이 앱이 실제로 쓰는 Qt 모듈은 QtCore / QtGui / QtWidgets / QtNetwork 뿐이라
 나머지는 전부 제외해 용량을 줄인다.
 """
@@ -87,36 +92,38 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name=APP_NAME,
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=False,  # 콘솔 창을 띄우지 않는다
-    icon=EXE_ICON,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name=APP_NAME,
-)
-
 if sys.platform == "darwin":
+    # .app 번들은 폴더라 onefile로 만들 수 없다 (PyInstaller가 막는다).
+    # onedir로 묶어 번들을 만들고, 배포는 release.yml에서 .dmg로 한다.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name=APP_NAME,
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,  # 콘솔 창을 띄우지 않는다
+        icon=EXE_ICON,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name=APP_NAME,
+    )
+
     app = BUNDLE(
         coll,
         name=f"{APP_NAME}.app",
@@ -127,4 +134,28 @@ if sys.platform == "darwin":
             "LSUIElement": True,
             "CFBundleDisplayName": "급식쪽지",
         },
+    )
+else:
+    # 파일 하나짜리 실행 파일. 압축을 풀 필요 없이 받아서 바로 실행한다.
+    # 실행할 때마다 임시 폴더에 풀기 때문에 onedir보다 시작이 조금 느리다.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name=APP_NAME,
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,  # 콘솔 창을 띄우지 않는다
+        icon=EXE_ICON,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
     )

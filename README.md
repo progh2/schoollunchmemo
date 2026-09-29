@@ -30,13 +30,17 @@
 
 ### 실행 파일로 바로 사용 (권장)
 
-[최신 릴리스](https://github.com/progh2/schoollunchmemo/releases/latest)에서 운영체제에 맞는 파일을 받아 압축을 풀고 실행합니다.
+[최신 릴리스](https://github.com/progh2/schoollunchmemo/releases/latest)에서 운영체제에 맞는 파일 **하나**만 받으면 됩니다. 압축을 풀 필요가 없습니다.
 
-| OS | 파일 | 비고 |
+| OS | 파일 | 실행 방법 |
 |---|---|---|
-| Windows | `SchoolNote-*-windows-x64.zip` | SchoolNote.exe 실행 |
-| macOS | `SchoolNote-*-macos.zip` | SchoolNote.app 실행 |
-| Linux | `SchoolNote-*-linux-x64.tar.gz` | SchoolNote 실행 |
+| Windows | `SchoolNote-*-windows-x64.exe` | 받은 파일을 더블클릭 |
+| macOS | `SchoolNote-*-macos.dmg` | 열어서 급식쪽지를 Applications로 끌어다 놓기 |
+| Linux | `SchoolNote-*-linux-x64` | `chmod +x` 후 실행 (브라우저가 실행 권한을 떼어 냅니다) |
+
+> **처음 실행할 때 경고가 뜰 수 있습니다.** 코드 서명이 없는 무료 앱이라서입니다.
+> - Windows "PC 보호" 창 → **추가 정보** → **실행**
+> - macOS "확인되지 않은 개발자" → 앱을 **우클릭 → 열기** (한 번만 하면 됩니다)
 
 처음 실행하면 설정 창이 열립니다. **학교** 탭에서 학교를 검색해 선택하면 바로 급식이 표시됩니다.
 
@@ -179,6 +183,8 @@ pip install -r requirements-dev.txt
 pyinstaller schoolnote.spec --noconfirm
 ```
 
+Windows는 `dist/SchoolNote.exe`, Linux는 `dist/SchoolNote` 파일 하나가 나옵니다 (onefile).
+macOS는 `.app`이 원래 폴더라 `dist/SchoolNote.app` 번들을 만들고, 배포 때 `.dmg`로 쌉니다.
 macOS / Linux는 해당 OS에서 직접 빌드해야 합니다 (크로스 빌드 불가).  
 태그를 push하면 GitHub Actions가 세 플랫폼을 자동 빌드합니다.
 
@@ -203,7 +209,7 @@ NEIS 교육정보 개방 포털 공개 API (인증키 불필요, 일 1000건 제
 - **v0.1 (MVP)** — 포스트잇 위젯, 트레이, 학교 검색, 자동 갱신, Windows 빌드
 - **v0.2** — 표시 옵션 전체, 자동 시작, 실행 스크립트, macOS/Linux 빌드
 - **v0.3** — 달력으로 날짜 고르기, 정보 탭, 인증키 제거, 글자 크기 설정
-- **v0.4** — 업데이트 확인 버튼, '항상 위에 표시' 해제가 모든 OS에서 동작
+- **v0.4** — 업데이트 확인 버튼, '항상 위에 표시' 해제가 모든 OS에서 동작, 압축 없이 바로 실행 (.exe / .dmg / 단일 실행 파일)
 - **백로그** — 여러 학교 등록, 내일 급식 미리보기, 특정 메뉴 알림, 주간 요약
 
 진행 상황은 [이슈](https://github.com/progh2/schoollunchmemo/issues)와
