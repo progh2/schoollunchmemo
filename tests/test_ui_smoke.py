@@ -723,3 +723,38 @@ class TestSearchEnter:
         finally:
             dialog.close()
             dialog.deleteLater()
+
+
+def test_school_list_selection_is_soft_not_accent_blue(qapp):
+    """선택된 학교는 옅은 분홍 바탕에 진한 글자로 칠한다 (#34)."""
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QListWidgetItem
+
+    from app.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(Config())
+    try:
+        listing = dialog.result_list
+        assert not listing.alternatingRowColors()
+        for name in ("미림마이스터고등학교", "미림여자고등학교", "서울신미림초등학교"):
+            listing.addItem(QListWidgetItem(f"{name}\n    서울특별시교육청"))
+        listing.resize(400, 300)
+        listing.setCurrentRow(0)
+        dialog.show()
+        qapp.processEvents()
+
+        image = listing.viewport().grab().toImage()
+        selected = listing.visualItemRect(listing.item(0))
+        other = listing.visualItemRect(listing.item(1))
+
+        def paint_at(rect):
+            return QColor(image.pixel(rect.right() - 12, rect.center().y()))
+
+        picked = paint_at(selected)
+        assert (picked.red(), picked.green(), picked.blue()) == (0xFF, 0xD9, 0xE2)
+        assert paint_at(other).lightness() > 240  # 선택 안 한 줄은 그대로 밝다
+        assert listing.item(0).isSelected() and not listing.item(1).isSelected()
+        assert listing.selectionMode() == listing.SelectionMode.SingleSelection
+    finally:
+        dialog.close()
+        dialog.deleteLater()

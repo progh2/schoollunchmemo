@@ -61,6 +61,13 @@ _ERROR_COLOR = "#C5221F"
 _WARN_COLOR = "#B06000"
 _MUTED_COLOR = "#6B6B6B"
 
+_RESULT_LIST_QSS = """
+QListWidget { outline: 0; }
+QListWidget::item { padding: 6px 8px; border-radius: 6px; color: #2B2B2B; }
+QListWidget::item:hover { background: #F6F0F2; }
+QListWidget::item:selected { background: #FFD9E2; color: #3D2530; }
+"""
+
 _COLOR_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "연두"}
 
 
@@ -130,7 +137,9 @@ class SettingsDialog(QDialog):
         layout.addLayout(row)
 
         self.result_list = QListWidget(tab)
-        self.result_list.setAlternatingRowColors(True)
+        # Windows 11 스타일은 선택·hover를 모두 진한 강조색으로 칠해서 두 줄이
+        # 똑같이 파랗게 보인다 (#34). 선택만 옅은 분홍으로 또렷하게 구분한다.
+        self.result_list.setStyleSheet(_RESULT_LIST_QSS)
         self.result_list.itemSelectionChanged.connect(self._on_result_selected)
         self.result_list.itemDoubleClicked.connect(lambda _: self._on_save())
         layout.addWidget(self.result_list, 1)
