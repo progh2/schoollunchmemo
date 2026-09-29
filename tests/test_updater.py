@@ -386,3 +386,50 @@ class TestDownloadGuards:
 def test_repo_slug_points_at_this_project():
     assert updater.REPO_SLUG == "progh2/schoollunchmemo"
     assert updater.LATEST_URL.endswith("/repos/progh2/schoollunchmemo/releases/latest")
+
+
+class TestCleanEnvironment:
+    """새 버전은 옛 앱의 onefile 흔적 없이 떠야 한다 (#48)."""
+
+    def test_pyinstaller_traces_are_removed(self, monkeypatch):
+        monkeypatch.setenv("_PYI_ARCHIVE_FILE", "C:/old/SchoolNote.exe")
+        monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "C:/Temp/_MEI000076982")
+        monkeypatch.setenv("_PYI_PARENT_PROCESS_LEVEL", "1")
+        monkeypatch.setenv("_MEIPASS2", "C:/Temp/_MEI000076982")
+        monkeypatch.setenv("HOME_KEEP", "yes")
+
+        env = updater.clean_environment()
+
+        assert not [key for key in env if key.startswith("_PYI_")]
+        assert "_MEIPASS2" not in env
+        assert env["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+        assert env["HOME_KEEP"] == "yes"  # 다른 환경은 그대로
+
+    def test_library_path_is_restored(self, monkeypatch):
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEIabc:/usr/lib")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/lib")
+        env = updater.clean_environment()
+        assert env["LD_LIBRARY_PATH"] == "/usr/lib"
+        assert "LD_LIBRARY_PATH_ORIG" not in env
+
+    def test_bundle_entries_dropped_without_orig(self, monkeypatch):
+        monkeypatch.setattr(sys, "_MEIPASS", "/tmp/_MEIabc", raising=False)
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEIabc")
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+        assert "LD_LIBRARY_PATH" not in updater.clean_environment()
+
+    def test_script_is_spawned_with_clean_environment(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("_PYI_ARCHIVE_FILE", "old")
+        spawned = []
+
+        class FakePopen:
+            def __init__(self, command, **kwargs):
+                spawned.append(kwargs)
+
+        monkeypatch.setattr(updater.subprocess, "Popen", FakePopen)
+        staged = tmp_path / "new"
+        staged.write_bytes(b"x")
+        updater.launch_replacer(staged, tmp_path / "SchoolNote")
+
+        assert spawned and "_PYI_ARCHIVE_FILE" not in spawned[0]["env"]
+        assert spawned[0]["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
