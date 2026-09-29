@@ -954,3 +954,43 @@ class TestMealTimeSettings:
             assert config.display["meal_time_mode"] is False  # 아무것도 안 바뀜
         finally:
             dialog.deleteLater()
+
+
+class TestOriginOnNote:
+    """원산지: 쓰인 재료 또렷, 안 쓰인 재료 흐림, 빨강은 쓰인 알레르기만 (#47)."""
+
+    ROWS = [
+        {
+            "MLSV_YMD": "20260930",
+            "MMEAL_SC_CODE": "2",
+            "MMEAL_SC_NM": "중식",
+            "DDISH_NM": "햄로제파스타(j) (1.2.5.6.9.10.12.13.15.16)<br/>시저샐러드 (1.2.5.6.10.12)",
+            "ORPLC_INFO": "돼지고기 : 국내산<br/>꽃게 : 국내산<br/>비고 : ",
+        }
+    ]
+
+    def _render(self, note, alerts):
+        note.set_details_default(True)
+        note.render_view(
+            NoteView(
+                day=date(2026, 9, 30),
+                meals=parse_meals(self.ROWS),
+                allergy_alerts=frozenset(alerts),
+            )
+        )
+        return note.body.text()
+
+    def test_unused_crab_is_faint_not_red(self, note):
+        from app.sticky import DANGER_COLOR
+
+        html = self._render(note, {8})
+        crab = html[html.index("꽃게") - 60 : html.index("꽃게")]
+        assert DANGER_COLOR not in crab
+        assert "쓰인 근거가 없어요" in html
+        assert "비고" not in html
+
+    def test_used_pork_is_red_for_pork_allergy(self, note):
+        from app.sticky import DANGER_COLOR
+
+        html = self._render(note, {10})
+        assert f"<span style='color:{DANGER_COLOR}; font-weight:600'>돼지고기</span>" in html
