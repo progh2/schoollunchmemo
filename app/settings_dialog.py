@@ -260,6 +260,13 @@ class SettingsDialog(QDialog):
 
         self.calorie_check = QCheckBox("칼로리 표시", form_group)
         self.allergy_check = QCheckBox("모든 알레르기 번호 표시", form_group)
+        self.marks_check = QCheckBox(
+            "메뉴 뒤 학교 내부 표기 숨기기  예: (j), (조식)", form_group
+        )
+        self.marks_check.setToolTip(
+            "학교가 NEIS에 메뉴를 올릴 때 붙인 기호입니다. 학교마다 뜻이 달라\n"
+            "기본으로 숨깁니다. 끄면 학교가 올린 그대로 보여 줍니다."
+        )
         self.expand_check = QCheckBox(
             "재료·원산지를 처음부터 펼쳐 두기", form_group
         )
@@ -268,6 +275,7 @@ class SettingsDialog(QDialog):
         )
         form.addRow(self.calorie_check)
         form.addRow(self.allergy_check)
+        form.addRow(self.marks_check)
         form.addRow(self.expand_check)
         layout.addWidget(form_group)
 
@@ -594,6 +602,7 @@ class SettingsDialog(QDialog):
         self.grade_combo.setCurrentIndex(max(0, index))
         self.calorie_check.setChecked(bool(display.get("show_calorie", True)))
         self.allergy_check.setChecked(bool(display.get("show_allergy", False)))
+        self.marks_check.setChecked(bool(display.get("hide_school_marks", True)))
         self.expand_check.setChecked(bool(display.get("expand_details", False)))
 
         alerts = {
@@ -648,6 +657,7 @@ class SettingsDialog(QDialog):
         display["grade_filter"] = self.grade_combo.currentData()
         display["show_calorie"] = self.calorie_check.isChecked()
         display["show_allergy"] = self.allergy_check.isChecked()
+        display["hide_school_marks"] = self.marks_check.isChecked()
         display["expand_details"] = self.expand_check.isChecked()
         display["allergy_alerts"] = sorted(
             code for code, check in self.allergy_checks.items() if check.isChecked()
