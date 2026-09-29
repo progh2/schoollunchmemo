@@ -100,6 +100,29 @@ def unwrap(payload: Any, service: str) -> tuple[ResultKind, str, str, list[dict]
     return kind, code, message, rows
 
 
+def total_count(payload: Any, service: str) -> int | None:
+    """응답 머리의 list_total_count. 없으면 None.
+
+    인증키 없는 요청은 NEIS가 최대 5건만 돌려준다(샘플 모드). 받은 row 수가
+    이 값보다 적으면 잘린 것이다 (#38).
+    """
+    if not isinstance(payload, dict):
+        return None
+    blocks = payload.get(service)
+    if not isinstance(blocks, list):
+        return None
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        for head_item in block.get("head") or []:
+            if isinstance(head_item, dict) and "list_total_count" in head_item:
+                try:
+                    return int(head_item["list_total_count"])
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
 # ---------------------------------------------------------------- 값 정규화
 
 
