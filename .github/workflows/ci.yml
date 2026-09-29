@@ -44,3 +44,30 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: pytest -q
+
+  # 업데이트는 실제 onefile 앱을 교체하고 다시 띄워야 확인된다 (#48).
+  # 단위 테스트로는 못 잡는 부트로더·환경 변수 문제를 여기서 잡는다.
+  update-e2e:
+    name: 업데이트 교체·재실행 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: V1 → V2 교체 후 V2가 다시 뜨는지
+        run: python tests/e2e/update_relaunch.py

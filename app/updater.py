@@ -395,6 +395,7 @@ def launch_replacer(staged: Path, target: Path) -> None:
         else:
             subprocess.Popen(  # noqa: S603 - 우리가 만든 스크립트만 실행한다
                 ["/bin/sh", str(script)],
+                env=clean_environment(),
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -414,11 +415,56 @@ def _spawn_windows(script: Path) -> None:
     new_group = 0x00000200
     breakaway = 0x01000000
     command = ["cmd", "/c", str(script)]
+    env = clean_environment()
     try:
-        subprocess.Popen(command, creationflags=no_window | new_group | breakaway, close_fds=True)  # noqa: S603
+        subprocess.Popen(  # noqa: S603
+            command,
+            env=env,
+            creationflags=no_window | new_group | breakaway,
+            close_fds=True,
+        )
     except OSError:
         # 빠져나가기가 허용되지 않는 작업 개체면 그냥 띄운다
-        subprocess.Popen(command, creationflags=no_window | new_group, close_fds=True)  # noqa: S603
+        subprocess.Popen(  # noqa: S603
+            command, env=env, creationflags=no_window | new_group, close_fds=True
+        )
+
+
+def clean_environment() -> dict[str, str]:
+    """새 버전을 띄울 스크립트에 넘길 환경. 이 앱의 흔적을 지운다 (#48).
+
+    onefile 앱은 임시 폴더(_MEI…)에 풀려 실행되고, 부트로더가 그 위치를
+    _PYI_* 환경 변수에 적어 둔다. 이걸 그대로 물려받은 새 exe는 자기가
+    '이미 풀린 앱의 자식'이라고 여기고, 옛 앱이 종료하며 지운 _MEI 폴더에서
+    python312.dll을 찾다가 "Failed to load Python DLL"로 죽는다.
+
+    PYINSTALLER_RESET_ENVIRONMENT=1은 새 부트로더에게 물려받은 환경을 무시하고
+    처음부터 시작하라고 알린다. 리눅스 부트로더는 LD_LIBRARY_PATH 앞에 _MEI
+    폴더를 붙이고 원래 값을 *_ORIG에 두므로 되돌린다.
+    """
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("_PYI_") and key != "_MEIPASS2"
+    }
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+
+    bundle = getattr(sys, "_MEIPASS", None)
+    for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
+        original = env.pop(f"{var}_ORIG", None)
+        if original is not None:
+            env[var] = original
+        elif bundle and var in env:
+            kept = [
+                part
+                for part in env[var].split(os.pathsep)
+                if part and not part.startswith(bundle)
+            ]
+            if kept:
+                env[var] = os.pathsep.join(kept)
+            else:
+                env.pop(var)
+    return env
 
 
 def _write_script(body: str) -> Path:
