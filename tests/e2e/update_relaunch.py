@@ -28,7 +28,8 @@ from pathlib import Path
 
 VERSION = "{version}"
 with Path(os.environ["E2E_MARKER"]).open("a") as out:
-    out.write(f"{{VERSION}} ok\\n")
+    # 어느 임시 폴더에서 떴는지도 남긴다. 옛 앱의 폴더를 이어 쓰면 버그다.
+    out.write(f"{{VERSION}} ok {{getattr(sys, '_MEIPASS', '')}}\\n")
 
 if VERSION == "V1":
     from app import updater
@@ -84,7 +85,18 @@ def main() -> int:
     print(f"표식:\n{log}")
     print(f"교체됨: {replaced}")
     print(f"작업 폴더 정리됨: {not workspace.exists()}")
-    ok = replaced and "V2 ok" in log
+    homes = {
+        line.split(" ", 2)[0]: line.split(" ", 2)[2]
+        for line in log.splitlines()
+        if line.count(" ") >= 2
+    }
+    # 옛 폴더가 우연히 남아 있으면 이어 써도 뜬다(Windows CI가 그렇다).
+    # 그래서 뜬 것만 보지 않고, 새 버전이 자기 폴더로 떴는지까지 본다.
+    fresh = bool(homes.get("V2")) and homes.get("V2") != homes.get("V1")
+    print(f"V1 폴더: {homes.get('V1')}")
+    print(f"V2 폴더: {homes.get('V2')}")
+    print(f"새 버전이 자기 폴더로 떴다: {fresh}")
+    ok = replaced and "V2 ok" in log and fresh
     print("성공" if ok else "실패: 새 버전이 다시 뜨지 않았다")
     return 0 if ok else 1
 
