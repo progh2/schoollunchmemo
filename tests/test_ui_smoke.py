@@ -675,3 +675,51 @@ class TestUpdateCheck:
             assert dialog.update_progress.isHidden() or not dialog.update_progress.isVisible()
         finally:
             dialog.deleteLater()
+
+
+class TestSearchEnter:
+    """검색창 Enter는 검색만 하고 저장을 누르지 않는다 (#33)."""
+
+    def _dialog(self, monkeypatch):
+        from app.settings_dialog import SettingsDialog
+
+        dialog = SettingsDialog(Config())
+        searched: list[str] = []
+        monkeypatch.setattr(
+            "app.settings_dialog.submit",
+            lambda fn, name, **_kw: searched.append(name),
+        )
+        saved: list[bool] = []
+        dialog.saved.connect(lambda: saved.append(True))
+        dialog.show()
+        dialog.search_edit.setFocus()
+        return dialog, searched, saved
+
+    @pytest.mark.parametrize("key_name", ["Key_Return", "Key_Enter"])
+    def test_enter_searches_and_does_not_save(self, qapp, monkeypatch, key_name):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        dialog, searched, saved = self._dialog(monkeypatch)
+        try:
+            dialog.search_edit.setText("미림")
+            QTest.keyClick(dialog.search_edit, getattr(Qt.Key, key_name))
+
+            assert searched == ["미림"]
+            assert saved == []
+            assert dialog.isVisible()  # 저장으로 닫히지 않았다
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+    def test_other_keys_still_type(self, qapp, monkeypatch):
+        from PySide6.QtTest import QTest
+
+        dialog, searched, _ = self._dialog(monkeypatch)
+        try:
+            QTest.keyClicks(dialog.search_edit, "abc")
+            assert dialog.search_edit.text() == "abc"
+            assert searched == []
+        finally:
+            dialog.close()
+            dialog.deleteLater()
