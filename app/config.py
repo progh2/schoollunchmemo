@@ -14,6 +14,7 @@ from typing import Any
 from PySide6.QtCore import QStandardPaths
 
 from . import APP_NAME
+from .mealtime import DEFAULT_TIMES
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,9 @@ DEFAULTS: dict[str, Any] = {
         "grade_filter": None,
         "show_allergy": False,
         "hide_school_marks": True,  # 메뉴 끝의 (j)·(조식) 같은 학교 내부 표기 (#36)
+        # 식사 시간에 맞춰 지금·다음 식사를 보여줄지와 각 식사 시간대 (#37)
+        "meal_time_mode": False,
+        "meal_times": {key: list(span) for key, span in DEFAULT_TIMES.items()},
         "show_calorie": True,
         "expand_details": False,  # 재료·원산지를 기본으로 펼쳐 둘지
         "allergy_alerts": [],  # 빨갛게 표시할 알레르기 번호

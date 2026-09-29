@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from html import escape
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTime, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QTabWidget,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -46,7 +47,7 @@ from . import (
     REPO_URL,
     VERSION,
 )
-from . import autostart, updater
+from . import autostart, mealtime, updater
 from .allergens import ALLERGENS
 from .config import Config
 from .neis import NeisClient, NeisError
@@ -167,6 +168,43 @@ class SettingsDialog(QDialog):
             return True  # 대화상자까지 가지 않게 여기서 끝낸다
         return super().eventFilter(watched, event)
 
+    def _build_meal_time_group(self, parent: QWidget) -> QGroupBox:
+        """식사 시간에 맞춰 보기 (#37)."""
+        group = QGroupBox("식사 시간", parent)
+        grid = QGridLayout(group)
+
+        self.meal_time_check = QCheckBox(
+            "식사 시간에 맞춰 보기 — 지난 식사는 숨기고, 다 먹으면 다음 급식", group
+        )
+        self.meal_time_check.setToolTip(
+            "예) 중식만 보는 경우: 점심이 끝나기 전에는 오늘 메뉴,\n"
+            "끝난 뒤에는 다음 등교일 메뉴를 보여줍니다.\n"
+            "‹ › 나 달력으로 고른 날은 그날 전체를 그대로 보여줍니다."
+        )
+        grid.addWidget(self.meal_time_check, 0, 0, 1, 4)
+
+        self.meal_time_edits: dict[str, tuple[QTimeEdit, QTimeEdit]] = {}
+        for row, key in enumerate(mealtime.MEAL_ORDER, start=1):
+            start = QTimeEdit(group)
+            end = QTimeEdit(group)
+            for edit in (start, end):
+                edit.setDisplayFormat("HH:mm")
+                edit.setMaximumWidth(90)
+            grid.addWidget(QLabel(MEAL_TYPE_LABELS[key], group), row, 0)
+            grid.addWidget(start, row, 1)
+            grid.addWidget(QLabel("~", group), row, 2)
+            grid.addWidget(end, row, 3)
+            self.meal_time_edits[key] = (start, end)
+        grid.setColumnStretch(4, 1)
+
+        self.meal_time_check.toggled.connect(self._sync_meal_time_edits)
+        return group
+
+    def _sync_meal_time_edits(self, enabled: bool) -> None:
+        for start, end in self.meal_time_edits.values():
+            start.setEnabled(enabled)
+            end.setEnabled(enabled)
+
     def _on_search(self) -> None:
         name = self.search_edit.text().strip()
         if not name:
@@ -249,6 +287,8 @@ class SettingsDialog(QDialog):
             meal_layout.addWidget(check)
         meal_layout.addStretch(1)
         layout.addWidget(meal_group)
+
+        layout.addWidget(self._build_meal_time_group(tab))
 
         form_group = QGroupBox("내용", tab)
         form = QFormLayout(form_group)
@@ -603,6 +643,15 @@ class SettingsDialog(QDialog):
         self.calorie_check.setChecked(bool(display.get("show_calorie", True)))
         self.allergy_check.setChecked(bool(display.get("show_allergy", False)))
         self.marks_check.setChecked(bool(display.get("hide_school_marks", True)))
+
+        enabled = bool(display.get("meal_time_mode", False))
+        self.meal_time_check.setChecked(enabled)
+        for key, (start, end) in mealtime.normalize_times(
+            display.get("meal_times")
+        ).items():
+            self.meal_time_edits[key][0].setTime(QTime(start.hour, start.minute))
+            self.meal_time_edits[key][1].setTime(QTime(end.hour, end.minute))
+        self._sync_meal_time_edits(enabled)
         self.expand_check.setChecked(bool(display.get("expand_details", False)))
 
         alerts = {
@@ -639,6 +688,22 @@ class SettingsDialog(QDialog):
         if not meal_types:
             meal_types = ["lunch"]
 
+        meal_times: dict[str, list[str]] = {}
+        for key, (start, end) in self.meal_time_edits.items():
+            if end.time() <= start.time():
+                QMessageBox.warning(
+                    self,
+                    "식사 시간을 확인해 주세요",
+                    f"{MEAL_TYPE_LABELS[key]} 끝 시각이 시작 시각보다 늦어야 합니다.",
+                )
+                self.show_tab("display")
+                end.setFocus()
+                return
+            meal_times[key] = [
+                start.time().toString("HH:mm"),
+                end.time().toString("HH:mm"),
+            ]
+
         if self._selected is None:
             answer = QMessageBox.question(
                 self,
@@ -658,6 +723,8 @@ class SettingsDialog(QDialog):
         display["show_calorie"] = self.calorie_check.isChecked()
         display["show_allergy"] = self.allergy_check.isChecked()
         display["hide_school_marks"] = self.marks_check.isChecked()
+        display["meal_time_mode"] = self.meal_time_check.isChecked()
+        display["meal_times"] = meal_times
         display["expand_details"] = self.expand_check.isChecked()
         display["allergy_alerts"] = sorted(
             code for code, check in self.allergy_checks.items() if check.isChecked()
