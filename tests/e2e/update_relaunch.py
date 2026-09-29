@@ -54,6 +54,8 @@ def build(work: Path, version: str) -> Path:
 
 
 def main() -> int:
+    # CI의 Windows 콘솔은 cp1252라 한글을 찍다 죽는다
+    sys.stdout.reconfigure(encoding="utf-8")
     work = Path(tempfile.mkdtemp(prefix="sn-e2e-"))
     v1, v2 = build(work, "V1"), build(work, "V2")
 
