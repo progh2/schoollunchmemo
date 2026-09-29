@@ -59,7 +59,10 @@ def build(work: Path, version: str) -> Path:
 def main() -> int:
     # CI의 Windows 콘솔은 cp1252라 한글을 찍다 죽는다
     sys.stdout.reconfigure(encoding="utf-8")
-    work = Path(tempfile.mkdtemp(prefix="sn-e2e-"))
+    # resolve()로 긴 경로를 쓴다. CI 임시 폴더는 RUNNER~1 같은 8.3 짧은 이름이라,
+    # 그대로 쓰면 updater가 다시 띄우는 경로(긴 이름)와 달라져 버그가 가려진다.
+    # 실제 사용자 경로(C:\\Users\\ham\\…)는 짧은 이름이 아니다.
+    work = Path(tempfile.mkdtemp(prefix="sn-e2e-")).resolve()
     v1, v2 = build(work, "V1"), build(work, "V2")
 
     install = work / "install"
