@@ -20,6 +20,8 @@ MIDNIGHT_MARGIN_MS = 2_000
 
 class DayScheduler(QObject):
     dayChanged = Signal()
+    #: 1분마다(그리고 자정에) 울린다. 식사 시간이 지났는지 볼 때 쓴다 (#37).
+    ticked = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -58,4 +60,5 @@ class DayScheduler(QObject):
             log.info("날짜가 %s → %s 로 바뀌었습니다.", self._current_day, today)
             self._current_day = today
             self.dayChanged.emit()
+        self.ticked.emit()
         self._arm_midnight()

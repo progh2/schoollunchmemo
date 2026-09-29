@@ -883,3 +883,74 @@ def test_settings_round_trip_school_marks(qapp, monkeypatch):
         reopened.deleteLater()
     finally:
         dialog.deleteLater()
+
+
+class TestMealTimeSettings:
+    """표시 탭의 식사 시간 설정 (#37)."""
+
+    def _dialog(self, monkeypatch, config):
+        from PySide6.QtWidgets import QMessageBox
+
+        from app.settings_dialog import SettingsDialog
+
+        monkeypatch.setattr(Config, "save", lambda self: None)
+        monkeypatch.setattr(
+            QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+        )
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            QMessageBox, "warning", lambda _parent, title, text, *a: warnings.append(text)
+        )
+        return SettingsDialog(config), warnings
+
+    def test_defaults_are_off_with_school_times(self, qapp, monkeypatch):
+        dialog, _ = self._dialog(monkeypatch, Config())
+        try:
+            assert not dialog.meal_time_check.isChecked()
+            start, end = dialog.meal_time_edits["lunch"]
+            assert (start.time().toString("HH:mm"), end.time().toString("HH:mm")) == (
+                "12:30",
+                "13:30",
+            )
+            assert not start.isEnabled()  # 끄면 시간 칸도 잠긴다
+        finally:
+            dialog.deleteLater()
+
+    def test_round_trip(self, qapp, monkeypatch):
+        from PySide6.QtCore import QTime
+
+        config = Config()
+        dialog, warnings = self._dialog(monkeypatch, config)
+        try:
+            dialog.meal_time_check.setChecked(True)
+            start, end = dialog.meal_time_edits["lunch"]
+            assert start.isEnabled()
+            start.setTime(QTime(11, 50))
+            end.setTime(QTime(12, 40))
+            dialog._on_save()
+
+            assert warnings == []
+            assert config.display["meal_time_mode"] is True
+            assert config.display["meal_times"]["lunch"] == ["11:50", "12:40"]
+        finally:
+            dialog.deleteLater()
+
+    def test_end_before_start_is_refused(self, qapp, monkeypatch):
+        from PySide6.QtCore import QTime
+
+        config = Config()
+        dialog, warnings = self._dialog(monkeypatch, config)
+        try:
+            dialog.meal_time_check.setChecked(True)
+            start, end = dialog.meal_time_edits["dinner"]
+            start.setTime(QTime(18, 0))
+            end.setTime(QTime(17, 0))
+            saved: list[bool] = []
+            dialog.saved.connect(lambda: saved.append(True))
+            dialog._on_save()
+
+            assert saved == []
+            assert warnings and "석식" in warnings[0]
+            assert config.display["meal_time_mode"] is False  # 아무것도 안 바뀜
+        finally:
+            dialog.deleteLater()

@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from PySide6.QtCore import QObject, QPoint, Qt
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-from . import autostart, cache
+from . import autostart, cache, mealtime
 from .calendar_popup import CalendarPopup, DayMarks
 from .config import Config
 from .neis import NeisClient, NeisError, ResultKind
@@ -48,6 +48,10 @@ class AppController(QObject):
         self._dialog: SettingsDialog | None = None
         self._calendar: CalendarPopup | None = None
         self._view_day = date.today()  # 지금 보고 있는 날
+        # 기본 화면(홈)을 보고 있는지. ‹ › 나 달력으로 다른 날을 고르면 False.
+        # 식사 시간 모드에서는 홈이 시계를 따라 내일로 넘어가기도 한다 (#37).
+        self._home = True
+        self._plan: mealtime.Plan | None = None
         self._inflight: set[date] = set()
         self._month_inflight: set[tuple[int, int]] = set()
 
@@ -76,6 +80,7 @@ class AppController(QObject):
         self.tray.quitRequested.connect(self.quit)
 
         self.scheduler.dayChanged.connect(self._on_day_changed)
+        self.scheduler.ticked.connect(self._on_tick)
 
     # ---------------------------------------------------------------- 시작
 
@@ -138,33 +143,62 @@ class AppController(QObject):
         target = self._view_day + timedelta(days=delta)
         if abs((target - date.today()).days) > MAX_DAY_OFFSET:
             return
+        self._home = False
         self._view_day = target
         self.refresh()
 
     def go_today(self) -> None:
-        if self._view_day == date.today():
+        """홈으로 돌아간다. 식사 시간 모드라면 '지금 기준 화면'이다."""
+        if self._home and self._view_day == self._home_day():
             return
-        self._view_day = date.today()
+        self._home = True
         self.refresh()
 
     def go_day(self, day: date) -> None:
         """달력에서 고른 날로 옮긴다."""
         if abs((day - date.today()).days) > MAX_DAY_OFFSET or day == self._view_day:
             return
+        self._home = False
         self._view_day = day
         self.refresh()
 
     def _on_day_changed(self) -> None:
-        # 자정을 넘겼으면 무엇을 보고 있었든 오늘로 되돌린다
-        self._view_day = date.today()
+        # 자정을 넘겼으면 무엇을 보고 있었든 홈으로 되돌린다
+        self._home = True
         self.refresh(force=True)
+
+    def _on_tick(self) -> None:
+        """1분마다: 식사가 끝나 홈 화면이 바뀌어야 하면 다시 그린다."""
+        if not self._home or not self._meal_time_mode():
+            return
+        if self._current_plan() != self._plan:
+            self.refresh()
+
+    # ---------------------------------------------------------- 식사 시간 (#37)
+
+    def _meal_time_mode(self) -> bool:
+        return bool(self._config.display.get("meal_time_mode", False))
+
+    def _current_plan(self) -> mealtime.Plan | None:
+        if not self._meal_time_mode():
+            return None
+        display = self._config.display
+        return mealtime.plan(
+            datetime.now(),
+            list(display.get("meal_types", ["lunch"])),
+            display.get("meal_times"),
+        )
+
+    def _home_day(self) -> date:
+        plan = self._current_plan()
+        return plan.day if plan else date.today()
 
     # ---------------------------------------------------------------- 창 조작
 
     def show_note(self) -> None:
-        # 다시 꺼낼 때는 언제나 오늘부터 본다
-        if self._view_day != date.today():
-            self._view_day = date.today()
+        # 다시 꺼낼 때는 언제나 홈부터 본다
+        if not self._home or self._view_day != self._home_day():
+            self._home = True
             self.refresh()
         self.note.show()
         self.note.raise_()
@@ -197,6 +231,12 @@ class AppController(QObject):
                 error=True,
             )
             return
+
+        if self._home:
+            self._plan = self._current_plan()
+            self._view_day = self._plan.day if self._plan else date.today()
+        else:
+            self._plan = None
 
         school = School.from_config(self._config.school or {})
         day = self._view_day
@@ -411,6 +451,9 @@ class AppController(QObject):
         display = self._config.display
         wanted = set(display.get("meal_types", ["lunch"]))
         grade = display.get("grade_filter")
+        plan = self._plan if self._plan and self._plan.day == day else None
+        if plan:  # 식사 시간 모드 홈: 지난 식사는 숨긴다
+            wanted = set(plan.meal_keys)
 
         meals: list[MealMenu] = [
             meal for meal in parse_meals(meal_rows) if meal.meal_key in wanted
@@ -437,6 +480,9 @@ class AppController(QObject):
             NoteView(
                 day=day,
                 is_today=day == date.today(),
+                at_home=self._home,
+                current_meal=plan.current if plan else None,
+                notice=plan.notice if plan else "",
                 meals=meals,
                 events=events,
                 meal_note=f"📭 {no_meal}",
@@ -467,6 +513,7 @@ class AppController(QObject):
             NoteView(
                 day=shown,
                 is_today=shown == date.today(),
+                at_home=self._home,
                 message=text,
                 message_icon=icon,
                 footer=footer,

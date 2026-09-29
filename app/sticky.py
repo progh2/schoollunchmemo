@@ -75,6 +75,15 @@ class NoteView:
     is_today: bool = True
     show_allergy: bool = False
     show_marks: bool = False  # (j)·(조식) 같은 학교 내부 표기를 그대로 보일지
+    current_meal: str | None = None  # 지금 먹는 중인 식사. '지금' 표시를 단다
+    notice: str = ""  # 오늘이 아닌 날을 보여주는 이유 (식사 시간 모드)
+    #: 기본 화면(홈)인지. 식사 시간 모드에서는 홈이 내일일 수도 있다.
+    #: None이면 오늘인지로 판단한다.
+    at_home: bool | None = None
+
+    @property
+    def is_home(self) -> bool:
+        return self.is_today if self.at_home is None else self.at_home
     show_calorie: bool = True
     allergy_alerts: frozenset[int] = frozenset()
 
@@ -346,7 +355,7 @@ class StickyNote(QWidget):
             f"{view.day.month}월 {view.day.day}일 "
             f"({_WEEKDAYS[view.day.weekday()]})"
         )
-        self.today_button.setVisible(not view.is_today)
+        self.today_button.setVisible(not view.is_home)
         self.body.setText(self._build_html(view))
 
         # '내일'·'모레' 같은 상대 표시는 꼬리말로 보낸다. 머리줄에 붙이면
@@ -487,6 +496,12 @@ class StickyNote(QWidget):
             )
             return "".join(blocks)
 
+        if view.notice:
+            blocks.append(
+                f"<p style='margin:4px 0 2px 0; font-size:{fs_sm}pt;"
+                f" color:{palette['accent']}'>🌙 {escape(view.notice)}</p>"
+            )
+
         for meal in view.meals:
             blocks.append(self._meal_html(meal, view, palette, fs, fs_sm))
 
@@ -508,7 +523,8 @@ class StickyNote(QWidget):
         if view.events:
             blocks.append(
                 f"<p style='margin:10px 0 2px 0; font-weight:600;"
-                f" color:{palette['muted']}'>📌 오늘 일정</p>"
+                f" color:{palette['muted']}'>"
+                f"📌 {'오늘 일정' if view.is_today else '일정'}</p>"
             )
             for event in view.events:
                 color = palette["accent"] if event.is_holiday else palette["text"]
@@ -537,9 +553,15 @@ class StickyNote(QWidget):
         fs_sm: int,
     ) -> str:
         alerts = set(view.allergy_alerts)
+        badge = ""
+        if view.current_meal and meal.meal_key == view.current_meal:
+            badge = (
+                f"<span style='color:{palette['accent']}; font-size:{fs_sm}pt'>"
+                " · 지금</span>"
+            )
         parts = [
             f"<p style='margin:6px 0 2px 0; font-weight:600;"
-            f" color:{palette['muted']}'>🍚 {escape(meal.label)}</p>"
+            f" color:{palette['muted']}'>🍚 {escape(meal.label)}{badge}</p>"
         ]
         for dish in meal.dishes[:MAX_DISHES]:
             parts.append(
