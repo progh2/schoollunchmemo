@@ -41,7 +41,9 @@ def build(work: Path, version: str) -> Path:
     source.write_text(PROGRAM.format(version=version), encoding="utf-8")
     subprocess.run(
         [
-            sys.executable, "-m", "PyInstaller", "--onefile", "--noconfirm",
+            # 실제 배포본(schoolnote.spec)처럼 콘솔 없는 GUI 앱으로 만든다.
+            # Windows는 콘솔/GUI 부트로더가 달라 콘솔 앱으로는 재현되지 않는다.
+            sys.executable, "-m", "PyInstaller", "--onefile", "--windowed", "--noconfirm",
             "--log-level", "WARN", "--name", "SchoolNote",
             "--distpath", str(work / f"dist_{version}"),
             "--workpath", str(work / f"build_{version}"),
