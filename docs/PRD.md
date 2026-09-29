@@ -573,8 +573,8 @@ sequenceDiagram
 | 자동 시작 | 레지스트리 Run 키 | LaunchAgent plist | `~/.config/autostart/*.desktop` |
 | 항상 위 | 켜기는 정상. **끄기는 Qt가 `WS_EX_TOPMOST`를 되돌리지 않아** `SetWindowPos(HWND_NOTOPMOST)`를 직접 호출한다 (#26) | 정상 | WM에 따라 차이 |
 | 투명도 | 정상 | 정상 | 컴포지터 필요 |
-| 패키징 | PyInstaller → NSIS | PyInstaller → .app/dmg | PyInstaller → AppImage |
-| 업데이트 교체 | 실행 중 파일 잠김 → `robocopy /MIR` 후 재실행 | `.app` 번들을 통째로 이름 바꾸기 | 설치 폴더를 통째로 이름 바꾸기 |
+| 패키징 | PyInstaller onefile → `.exe` 하나 | onedir `.app` → `.dmg` | PyInstaller onefile → 실행 파일 하나 |
+| 업데이트 교체 | 실행 중 exe 잠김 → 종료 후 `move /y` 재시도(최대 30초) | `.dmg` 마운트 → `ditto`로 꺼내 번들 이름 바꾸기 | 실행 파일 하나 `mv -f` |
 
 ### 7.5 업데이트 (`updater.py`)
 
@@ -584,15 +584,17 @@ sequenceDiagram
 
 1. `GET /repos/{owner}/{repo}/releases/latest` — 태그를 현재 버전과 비교한다.
    프리릴리스는 GitHub가 알아서 제외한다.
-2. 자산 이름에 들어간 `windows` / `macos` / `linux` 로 이 OS용 파일을 고른다.
+2. 자산 이름의 플랫폼 표시와 끝부분(`windows…exe` / `macos….dmg` / `…-linux-x64`)으로
+   이 OS용 파일을 고른다. 예전 zip/tar.gz 자산은 고르지 않는다.
    릴리스 자산 이름 규칙(`release.yml`)이 바뀌면 여기가 같이 깨진다.
-3. **설치 폴더 옆에** 내려받아 푼다. 같은 파일시스템이어야 마지막 교체가
-   이름 바꾸기 한 번으로 끝난다. zip은 실행 권한·심볼릭 링크를 직접 복원한다
-   (`zipfile`은 권한 비트를 버린다). 압축 안의 `../` 경로는 거부한다.
+3. **교체 대상 옆에** 내려받는다. 같은 파일시스템이어야 마지막 교체가 이름
+   바꾸기 한 번으로 끝난다. 크기와 첫 바이트(`MZ` / ELF)를 확인해 오류 페이지를
+   실행 파일로 착각하지 않는다. macOS는 `.dmg`를 마운트해 `.app`을 `ditto`로 꺼낸다.
 4. 실행 중인 자기 자신은 덮어쓸 수 없으므로(Windows는 파일 잠금 때문에 아예 불가)
    도우미 스크립트를 띄우고 앱을 종료한다. 스크립트는 프로세스가 사라질 때까지
-   기다렸다가 폴더를 교체하고 새 실행 파일을 띄운다. POSIX는 교체 실패 시
-   원래 폴더를 되돌린다.
+   기다렸다가 교체하고 새 실행 파일을 띄운다. Windows onefile은 부트로더가 잠깐
+   exe를 더 잡고 있어 교체를 되풀이 시도하고, 끝내 실패하면 예전 exe를 다시 띄운다.
+   macOS는 번들 교체 실패 시 원래 번들을 되돌린다.
 
 **한계** — 코드 서명이 없다. macOS에서 사용자가 이미 Gatekeeper를 통과시킨
 번들을 교체하는 방식이라, 배포 파일을 브라우저로 받는 경우와 달리 격리 속성이
@@ -643,6 +645,7 @@ sequenceDiagram
 
 - [ ] '항상 위에 표시'를 끄면 모든 OS에서 실제로 해제 (#26)
 - [ ] 정보 탭 [업데이트 확인] — 눌렀을 때만 조회·설치 (I-06 ~ I-09, #27)
+- [ ] 압축 없이 바로 실행 — Windows `.exe` / macOS `.dmg` / Linux 실행 파일 하나 (#29)
 
 ### v0.3 — 릴리스 완료
 

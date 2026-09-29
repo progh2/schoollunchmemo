@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
+import os
 import stat
+import subprocess
 import sys
-import tarfile
-import zipfile
+import time
 
 import pytest
 import requests
@@ -50,17 +51,17 @@ class TestVersionCompare:
 
 class TestAssetPick:
     ASSETS = [
-        {"name": "SchoolNote-v0.4.0-linux-x64.tar.gz"},
-        {"name": "SchoolNote-v0.4.0-macos.zip"},
-        {"name": "SchoolNote-v0.4.0-windows-x64.zip"},
+        {"name": "SchoolNote-v0.4.0-linux-x64"},
+        {"name": "SchoolNote-v0.4.0-macos.dmg"},
+        {"name": "SchoolNote-v0.4.0-windows-x64.exe"},
     ]
 
     @pytest.mark.parametrize(
         "key, expected",
         [
-            ("windows", "SchoolNote-v0.4.0-windows-x64.zip"),
-            ("macos", "SchoolNote-v0.4.0-macos.zip"),
-            ("linux", "SchoolNote-v0.4.0-linux-x64.tar.gz"),
+            ("windows", "SchoolNote-v0.4.0-windows-x64.exe"),
+            ("macos", "SchoolNote-v0.4.0-macos.dmg"),
+            ("linux", "SchoolNote-v0.4.0-linux-x64"),
         ],
     )
     def test_picks_matching_platform(self, key, expected):
@@ -69,14 +70,45 @@ class TestAssetPick:
     def test_unknown_platform_gets_nothing(self):
         assert updater.pick_asset(self.ASSETS, "freebsd") is None
 
+    @pytest.mark.parametrize(
+        "legacy, key",
+        [
+            ("SchoolNote-v0.3.1-windows-x64.zip", "windows"),
+            ("SchoolNote-v0.3.1-macos.zip", "macos"),
+            ("SchoolNote-v0.3.1-linux-x64.tar.gz", "linux"),
+        ],
+    )
+    def test_legacy_archives_are_not_picked(self, legacy, key):
+        """예전 압축 자산을 받아 실행 파일 자리에 끼우면 앱이 깨진다 (#29)."""
+        assert updater.pick_asset([{"name": legacy}], key) is None
+
+
+_ASSET_NAMES = {
+    "windows": "SchoolNote-{tag}-windows-x64.exe",
+    "macos": "SchoolNote-{tag}-macos.dmg",
+    "linux": "SchoolNote-{tag}-linux-x64",
+}
+
 
 class _FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload=None, status_code=200, body=b""):
         self._payload = payload
         self.status_code = status_code
+        self._body = body
+        self.headers = {"Content-Length": str(len(body))} if body else {}
 
     def json(self):
         return self._payload
+
+    def iter_content(self, size):
+        for start in range(0, len(self._body), size):
+            yield self._body[start : start + size]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
 
 
 class _FakeSession:
@@ -99,11 +131,11 @@ def _release_payload(tag="v9.9.9"):
         "html_url": f"https://example.invalid/{tag}",
         "assets": [
             {
-                "name": f"SchoolNote-{tag}-{key}.zip",
-                "browser_download_url": f"https://example.invalid/{key}.zip",
+                "name": pattern.format(tag=tag),
+                "browser_download_url": f"https://example.invalid/{key}",
                 "size": 42 * 1024 * 1024,
             }
-            for key in ("windows", "macos", "linux")
+            for key, pattern in _ASSET_NAMES.items()
         ],
     }
 
@@ -115,7 +147,9 @@ class TestFetchLatest:
 
         assert release.tag == "v9.9.9"
         assert release.is_update is True
-        assert updater.platform_key() in release.asset_name
+        assert release.asset_name == _ASSET_NAMES[updater.platform_key()].format(
+            tag="v9.9.9"
+        )
         assert release.size_text == "42MB"
         assert session.calls == [updater.LATEST_URL]
 
@@ -141,70 +175,72 @@ class TestFetchLatest:
             updater.fetch_latest(session=session)
 
 
-class TestExtract:
-    @pytest.mark.skipif(sys.platform == "win32", reason="Windows에는 실행 비트가 없다")
-    def test_zip_keeps_executable_bit(self, tmp_path):
-        """zipfile 기본 동작은 권한을 버린다. 잃으면 새 앱이 실행되지 않는다."""
-        archive = tmp_path / "app.zip"
-        with zipfile.ZipFile(archive, "w") as bundle:
-            info = zipfile.ZipInfo("SchoolNote")
-            info.external_attr = (stat.S_IFREG | 0o755) << 16
-            bundle.writestr(info, "binary")
-
-        dest = tmp_path / "out"
-        updater.extract(archive, dest)
-        assert (dest / "SchoolNote").stat().st_mode & stat.S_IXUSR
-
-    def test_zip_cannot_escape_destination(self, tmp_path):
-        archive = tmp_path / "evil.zip"
-        with zipfile.ZipFile(archive, "w") as bundle:
-            bundle.writestr("../escaped.txt", "nope")
-
-        with pytest.raises(updater.UpdateError, match="폴더 밖"):
-            updater.extract(archive, tmp_path / "out")
-        assert not (tmp_path / "escaped.txt").exists()
-
-    def test_tar_cannot_escape_destination(self, tmp_path):
-        payload = tmp_path / "payload.txt"
-        payload.write_text("nope", encoding="utf-8")
-        archive = tmp_path / "evil.tar.gz"
-        with tarfile.open(archive, "w:gz") as bundle:
-            bundle.add(payload, arcname="../escaped.txt")
-
-        with pytest.raises(updater.UpdateError, match="폴더 밖"):
-            updater.extract(archive, tmp_path / "out")
-
-    def test_unknown_archive_is_rejected(self, tmp_path):
-        archive = tmp_path / "plain.bin"
-        archive.write_bytes(b"not an archive")
-        with pytest.raises(updater.UpdateError, match="압축 형식"):
-            updater.extract(archive, tmp_path / "out")
+def _binary_release(body: bytes) -> updater.Release:
+    return updater.Release(
+        tag="v9.9.9",
+        notes="",
+        page_url="",
+        asset_name="SchoolNote-v9.9.9-new",
+        asset_url="https://example.invalid/new",
+        asset_size=len(body),
+    )
 
 
-class TestPayloadRoot:
-    def test_single_folder_is_unwrapped(self, tmp_path):
-        """macOS/Linux 자산은 폴더 하나로 감싸여 있다."""
-        inner = tmp_path / "SchoolNote"
-        inner.mkdir()
-        assert updater.payload_root(tmp_path) == inner
+@pytest.mark.skipif(sys.platform == "darwin", reason="macOS는 .dmg를 마운트한다")
+class TestDownloadBinary:
+    """Windows/Linux onefile: 받은 파일이 곧 새 실행 파일이다."""
 
-    def test_macos_metadata_folder_is_ignored(self, tmp_path):
-        inner = tmp_path / "SchoolNote.app"
-        inner.mkdir()
-        (tmp_path / "__MACOSX").mkdir()
-        assert updater.payload_root(tmp_path) == inner
+    MAGIC = updater._MAGIC.get(updater.platform_key(), b"")
 
-    def test_flat_contents_stay_put(self, tmp_path):
-        """Windows 자산은 내용물이 최상위에 흩어져 있다."""
-        (tmp_path / "SchoolNote.exe").write_text("x", encoding="utf-8")
-        (tmp_path / "_internal").mkdir()
-        assert updater.payload_root(tmp_path) == tmp_path
+    def test_staged_next_to_target_and_executable(self, tmp_path):
+        body = self.MAGIC + b"-new-binary"
+        target = tmp_path / "SchoolNote"
+        seen = []
+
+        staged = updater.download(
+            _binary_release(body),
+            target,
+            progress=lambda done, total: seen.append((done, total)),
+            session=_FakeSession(_FakeResponse(body=body)),
+        )
+
+        # 같은 폴더(같은 파일시스템)에 두어야 이름 바꾸기 한 번으로 끝난다
+        assert staged.parent == tmp_path / updater.WORKSPACE_NAME
+        assert staged.read_bytes() == body
+        assert seen[-1] == (len(body), len(body))
+        if sys.platform != "win32":
+            assert staged.stat().st_mode & stat.S_IXUSR
+
+    def test_error_page_is_not_mistaken_for_a_binary(self, tmp_path):
+        body = b"<html>rate limited</html>"
+        with pytest.raises(updater.UpdateError, match="실행 파일이 아닙니다"):
+            updater.download(
+                _binary_release(body),
+                tmp_path / "SchoolNote",
+                session=_FakeSession(_FakeResponse(body=body)),
+            )
+        assert not (tmp_path / updater.WORKSPACE_NAME).exists()
+
+    def test_truncated_download_is_rejected(self, tmp_path):
+        body = self.MAGIC + b"-new-binary"
+        release = _binary_release(body)
+        short = _FakeResponse(body=body[:-3])
+        with pytest.raises(updater.UpdateError, match="크기"):
+            updater.download(release, tmp_path / "SchoolNote", session=_FakeSession(short))
+
+    def test_http_error_is_reported(self, tmp_path):
+        with pytest.raises(updater.UpdateError, match="HTTP 503"):
+            updater.download(
+                _binary_release(b"x"),
+                tmp_path / "SchoolNote",
+                session=_FakeSession(_FakeResponse(status_code=503)),
+            )
 
 
 class TestInstallLocation:
-    def test_source_run_has_no_install_root(self):
+    def test_source_run_has_no_target(self):
         """테스트는 소스에서 돈다. 자동 설치 대상이 아니다."""
-        assert updater.install_root() is None
+        assert updater.install_target() is None
 
     def test_source_run_is_blocked_with_a_reason(self):
         reason = updater.blocked_reason()
@@ -215,68 +251,130 @@ class TestInstallLocation:
         sys.platform == "win32", reason="Windows에서는 chmod로 폴더를 잠글 수 없다"
     )
     def test_readonly_folder_is_blocked(self, tmp_path):
-        root = tmp_path / "SchoolNote"
-        root.mkdir()
-        root.chmod(0o500)
+        folder = tmp_path / "apps"
+        folder.mkdir()
+        target = folder / "SchoolNote"
+        target.write_bytes(b"old")
+        folder.chmod(0o500)
         try:
-            reason = updater.blocked_reason(root)
+            reason = updater.blocked_reason(target)
         finally:
-            root.chmod(0o700)
+            folder.chmod(0o700)
 
         assert reason is not None
         assert "쓸 수 없습니다" in reason
 
     def test_writable_folder_is_allowed(self, tmp_path):
-        root = tmp_path / "SchoolNote"
-        root.mkdir()
-        assert updater.blocked_reason(root) is None
+        target = tmp_path / "SchoolNote.exe"
+        target.write_bytes(b"old")
+        assert updater.blocked_reason(target) is None
 
-    def test_executable_path_matches_platform(self, tmp_path):
-        found = updater.executable_in(tmp_path)
-        if sys.platform == "darwin":
-            assert found == tmp_path / "Contents" / "MacOS" / "SchoolNote"
-        elif sys.platform == "win32":
-            assert found == tmp_path / "SchoolNote.exe"
-        else:
-            assert found == tmp_path / "SchoolNote"
+    def test_bundle_executable_path(self, tmp_path):
+        bundle = tmp_path / "SchoolNote.app"
+        assert updater.bundle_executable(bundle) == (
+            bundle / "Contents" / "MacOS" / "SchoolNote"
+        )
 
 
 class TestReplacerScript:
-    def test_refuses_payload_without_executable(self, tmp_path):
-        staged = tmp_path / "staged"
-        staged.mkdir()
-        with pytest.raises(updater.UpdateError, match="온전하지"):
-            updater.launch_replacer(staged, tmp_path / "SchoolNote")
+    def test_refuses_missing_download(self, tmp_path):
+        with pytest.raises(updater.UpdateError, match="다시 시도"):
+            updater.launch_replacer(tmp_path / "nope", tmp_path / "SchoolNote")
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX 스크립트 전용")
-    def test_posix_script_waits_then_swaps_and_restores(self, tmp_path):
-        root = tmp_path / "SchoolNote"
-        staged = tmp_path / ".SchoolNote-update" / "payload" / "SchoolNote"
-        script = updater._posix_script(4242, staged, root, staged.parent.parent)
+    def test_windows_script_waits_retries_and_relaunches(self, tmp_path):
+        target = tmp_path / "SchoolNote.exe"
+        workspace = tmp_path / updater.WORKSPACE_NAME
+        staged = workspace / "SchoolNote-v9-windows-x64.exe"
+        script = updater.replacer_script(4242, staged, target, workspace, "win32")
 
-        assert "kill -0 4242" in script  # 앱이 죽을 때까지 기다린다
-        assert f'mv "{root}"' in script
-        assert f'mv "{staged}" "{root}"' in script
-        assert f'mv "{tmp_path / ".SchoolNote-old"}" "{root}"' in script  # 실패 시 복구
-
-    @pytest.mark.skipif(sys.platform != "win32", reason="Windows 스크립트 전용")
-    def test_windows_script_waits_then_mirrors(self, tmp_path):
-        root = tmp_path / "SchoolNote"
-        workspace = tmp_path / ".SchoolNote-update"
-        script = updater._windows_script(4242, workspace / "payload", root, workspace)
-
-        assert "PID eq 4242" in script
-        assert "/MIR" in script
-        assert str(updater.executable_in(root)) in script
+        assert 'tasklist /FI "PID eq 4242"' in script  # 앱이 죽을 때까지 기다린다
+        assert f'move /y "{staged}" "{target}"' in script
+        assert "geq 30" in script  # 부트로더가 exe를 놓을 때까지 되풀이
+        assert f'start "" "{target}"' in script
+        # 숨은 콘솔에서 timeout은 즉시 실패해 대기 없이 헛돈다
+        assert "timeout " not in script
+        assert "ping -n 2 127.0.0.1" in script
 
 
-class TestDownload:
+def _dead_pid() -> int:
+    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    process.wait()
+    return process.pid
+
+
+def _wait_for(path, seconds=10.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if path.exists() and path.stat().st_size:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX 셸 스크립트를 실제로 돌린다")
+class TestReplacerEndToEnd:
+    """스크립트를 실제로 실행해 교체·재실행·정리까지 확인한다."""
+
+    def test_linux_swaps_single_file_and_relaunches(self, tmp_path):
+        marker = tmp_path / "relaunched"
+        target = tmp_path / "SchoolNote"
+        target.write_text("#!/bin/sh\necho old > /dev/null\n", encoding="utf-8")
+        workspace = tmp_path / updater.WORKSPACE_NAME
+        workspace.mkdir()
+        staged = workspace / "SchoolNote-v9-linux-x64"
+        staged.write_text(f"#!/bin/sh\necho new > '{marker}'\n", encoding="utf-8")
+
+        script = tmp_path / "update.sh"
+        script.write_text(
+            updater.replacer_script(_dead_pid(), staged, target, workspace, "linux"),
+            encoding="utf-8",
+        )
+        subprocess.run(["/bin/sh", str(script)], check=True, timeout=30)
+
+        assert "echo new" in target.read_text(encoding="utf-8")
+        assert target.stat().st_mode & stat.S_IXUSR
+        assert not workspace.exists()
+        assert _wait_for(marker), "새 실행 파일이 다시 뜨지 않았다"
+
+    def test_macos_swaps_bundle_and_relaunches(self, tmp_path):
+        marker = tmp_path / "opened"
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        fake_open = fake_bin / "open"
+        fake_open.write_text(f"#!/bin/sh\necho \"$1\" > '{marker}'\n", encoding="utf-8")
+        fake_open.chmod(0o755)
+
+        target = tmp_path / "SchoolNote.app"
+        (target / "Contents").mkdir(parents=True)
+        (target / "Contents" / "old").write_text("old", encoding="utf-8")
+        workspace = tmp_path / updater.WORKSPACE_NAME
+        staged = workspace / "SchoolNote.app"
+        (staged / "Contents").mkdir(parents=True)
+        (staged / "Contents" / "new").write_text("new", encoding="utf-8")
+
+        script = tmp_path / "update.sh"
+        script.write_text(
+            updater.replacer_script(_dead_pid(), staged, target, workspace, "darwin"),
+            encoding="utf-8",
+        )
+        env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}
+        subprocess.run(["/bin/sh", str(script)], check=True, timeout=30, env=env)
+
+        assert (target / "Contents" / "new").exists()
+        assert not (target / "Contents" / "old").exists()
+        assert not (tmp_path / updater.BACKUP_NAME).exists()
+        assert not workspace.exists()
+        assert _wait_for(marker)
+        assert marker.read_text(encoding="utf-8").strip() == str(target)
+
+
+class TestDownloadGuards:
     def test_missing_url_fails_before_touching_disk(self, tmp_path):
         release = updater.Release(
             tag="v9.9.9",
             notes="",
             page_url="",
-            asset_name="SchoolNote.zip",
+            asset_name="SchoolNote.exe",
             asset_url="",
             asset_size=0,
         )

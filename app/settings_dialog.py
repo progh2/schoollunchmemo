@@ -497,8 +497,8 @@ class SettingsDialog(QDialog):
         return box.clickedButton() is install
 
     def _start_update(self, release: updater.Release) -> None:
-        root = updater.install_root()
-        if root is None:  # blocked_reason에서 걸러지지만 방어적으로 둔다
+        target = updater.install_target()
+        if target is None:  # blocked_reason에서 걸러지지만 방어적으로 둔다
             self._on_update_failed(updater.UpdateError("설치 위치를 찾지 못했습니다."))
             return
 
@@ -512,9 +512,9 @@ class SettingsDialog(QDialog):
         submit(
             updater.download,
             release,
-            root,
+            target,
             relay.progress.emit,
-            on_ok=lambda staged: self._on_update_downloaded(staged, root),
+            on_ok=lambda staged: self._on_update_downloaded(staged, target),
             on_err=self._on_update_failed,
         )
 
@@ -525,10 +525,10 @@ class SettingsDialog(QDialog):
         else:  # 길이를 모르면 무한 진행 표시
             self.update_progress.setRange(0, 0)
 
-    def _on_update_downloaded(self, staged, root) -> None:
+    def _on_update_downloaded(self, staged, target) -> None:
         self.update_progress.setValue(100)
         try:
-            updater.launch_replacer(staged, root)
+            updater.launch_replacer(staged, target)
         except updater.UpdateError as exc:
             self._on_update_failed(exc)
             return
