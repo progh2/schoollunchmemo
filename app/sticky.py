@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import allergens
+from . import allergens, origin
 from .neis.models import MealMenu, ScheduleEvent
 from .resources.theme import colors
 
@@ -54,6 +54,17 @@ CLICK_SLOP = 4  # 이보다 적게 움직였으면 끌기가 아니라 클릭
 QWIDGETSIZE_MAX = 16777215  # Qt가 쓰는 크기 상한
 _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 _RELATIVE_LABELS = {-2: "그저께", -1: "어제", 0: "오늘", 1: "내일", 2: "모레"}
+
+
+def _blend(color: str, background: str, amount: float) -> str:
+    """color를 background 쪽으로 amount만큼 섞는다. 흐린 글씨에 쓴다."""
+    a = QColor(color)
+    b = QColor(background)
+    mix = [
+        round(x + (y - x) * amount)
+        for x, y in ((a.red(), b.red()), (a.green(), b.green()), (a.blue(), b.blue()))
+    ]
+    return QColor(*mix).name()
 
 
 def _relative_label(day: date) -> str:
@@ -611,7 +622,9 @@ class StickyNote(QWidget):
         self, meal: MealMenu, palette: dict[str, str], alerts: set[int], fs_sm: int
     ) -> str:
         sections: list[str] = []
-        for title, text in (("원산지", meal.origin), ("영양", meal.nutrition)):
+        if meal.origin:
+            sections.append(self._origin_html(meal, palette, alerts, fs_sm))
+        for title, text in (("영양", meal.nutrition),):
             if not text:
                 continue
             body = allergens.highlight_html(escape(text), alerts, DANGER_COLOR)
@@ -621,6 +634,37 @@ class StickyNote(QWidget):
                 f"<b>{title}</b><br/>{body.replace(chr(10), '<br/>')}</p>"
             )
         return "".join(sections)
+
+    def _origin_html(
+        self, meal: MealMenu, palette: dict[str, str], alerts: set[int], fs_sm: int
+    ) -> str:
+        """원산지: 오늘 메뉴에 쓰인 재료는 또렷하게, 근거 없는 재료는 흐리게 (#47).
+
+        학교 원산지는 대개 매일 같은 고정 목록이라, 쓰이지도 않은 재료까지
+        알레르기로 칠하면 매일 가짜 경보가 뜬다. 빨강은 쓰인 재료에만 쓴다.
+        """
+        lines = origin.classify(meal.origin, meal.dishes, alerts)
+        faint = _blend(palette["muted"], palette["bg"], 0.55)
+        rows: list[str] = []
+        for line in lines:
+            text = escape(line.text)
+            if line.alert:
+                rows.append(allergens.highlight_html(text, alerts, DANGER_COLOR))
+            elif line.used:
+                rows.append(f"<span style='color:{palette['text']}'>{text}</span>")
+            else:
+                rows.append(f"<span style='color:{faint}'>{text}</span>")
+        hint = ""
+        if any(not line.used for line in lines):
+            hint = (
+                f"<br/><span style='color:{faint}'>"
+                "흐린 재료는 오늘 메뉴에 쓰인 근거가 없어요</span>"
+            )
+        return (
+            f"<p style='margin:4px 0 0 0; font-size:{fs_sm}pt;"
+            f" color:{palette['muted']}'>"
+            f"<b>원산지</b><br/>{'<br/>'.join(rows)}{hint}</p>"
+        )
 
     # -------------------------------------------------------------- 창 동작
 
