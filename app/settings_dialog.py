@@ -239,9 +239,14 @@ class SettingsDialog(QDialog):
                 and school.office_code == self._selected.office_code
             ):
                 item.setSelected(True)
+        total = getattr(schools, "total", len(schools))
         note = f"{len(schools)}개를 찾았습니다."
-        if len(schools) >= 100:
-            note += " 100개까지만 표시합니다. 검색어를 더 자세히 입력하세요."
+        if total > len(schools):
+            # 너무 흔한 이름은 NEIS가 앞의 몇 건만 준다 (#38)
+            note = (
+                f"전체 {total}개 중 {len(schools)}개만 보여요. "
+                "학교 이름을 더 자세히 입력해 주세요."
+            )
         self._set_status(self.search_status, note, _WARN_COLOR)
 
     def _on_search_failed(self, error: Exception) -> None:
