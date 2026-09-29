@@ -157,6 +157,56 @@ class TestDishes:
         assert dish.allergens == ()
 
 
+class TestSchoolMarks:
+    """이름 끝의 학교 내부 표기를 떼어 둔다 (#36). 원본은 NEIS 실제 응답."""
+
+    RAW = (
+        "현미밥(j) <br/>소고기콩나물해장국(j) (5.6.9.16.18)<br/>새콤얼갈이무침 (5.6)"
+        "<br/>깍두기(조식) (9)<br/>오이피클(jn)<br/>배추겉절이(완) (9)"
+        "<br/>셀프토스트바(크루와상) (1.2.5.6)<br/>사라다빵(모닝빵)"
+    )
+
+    def _by_name(self):
+        return {dish.name: dish for dish in parse_dishes(self.RAW)}
+
+    def test_marks_are_split_off(self):
+        dishes = self._by_name()
+        assert dishes["현미밥"].marks == ("j",)
+        assert dishes["오이피클"].marks == ("jn",)
+        assert dishes["깍두기"].marks == ("조식",)
+        assert dishes["배추겉절이"].marks == ("완",)
+
+    def test_allergens_still_parsed_behind_marks(self):
+        dishes = self._by_name()
+        assert dishes["소고기콩나물해장국"].allergens == ("5", "6", "9", "16", "18")
+        assert dishes["깍두기"].allergens == ("9",)
+
+    def test_descriptive_parentheses_are_kept(self):
+        dishes = self._by_name()
+        assert "셀프토스트바(크루와상)" in dishes
+        assert dishes["셀프토스트바(크루와상)"].allergens == ("1", "2", "5", "6")
+        assert "사라다빵(모닝빵)" in dishes
+
+    def test_order_of_marks_and_allergens_does_not_matter(self):
+        (first,) = parse_dishes("현미밥(j) (5.6)")
+        (second,) = parse_dishes("현미밥 (5.6)(j)")
+        assert (first.name, first.allergens, first.marks) == (
+            second.name,
+            second.allergens,
+            second.marks,
+        )
+
+    def test_several_marks_in_a_row(self):
+        (dish,) = parse_dishes("장조림(조)(j) (1.5)")
+        assert dish.name == "장조림"
+        assert dish.marks == ("조", "j")
+
+    def test_name_that_is_only_a_mark_is_kept(self):
+        """이름이 통째로 사라지면 안 된다."""
+        (dish,) = parse_dishes("(j)")
+        assert dish.name == "(j)"
+
+
 class TestMeals:
     def test_parses_row(self):
         _, _, _, rows = unwrap(MEAL_OK, "mealServiceDietInfo")

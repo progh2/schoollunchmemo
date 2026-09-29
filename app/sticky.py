@@ -74,6 +74,7 @@ class NoteView:
     footer: str = ""
     is_today: bool = True
     show_allergy: bool = False
+    show_marks: bool = False  # (j)·(조식) 같은 학교 내부 표기를 그대로 보일지
     show_calorie: bool = True
     allergy_alerts: frozenset[int] = frozenset()
 
@@ -569,6 +570,8 @@ class StickyNote(QWidget):
     ) -> str:
         hits = allergens.matched(dish.allergens, alerts)
         name = escape(dish.name)
+        if view.show_marks and dish.marks:
+            name += "".join(f"({escape(mark)})" for mark in dish.marks)
         if hits:
             return (
                 f"<span style='color:{DANGER_COLOR}; font-weight:600'>{name}</span>"

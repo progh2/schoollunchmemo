@@ -26,6 +26,7 @@ DEFAULTS: dict[str, Any] = {
         "meal_types": ["lunch"],
         "grade_filter": None,
         "show_allergy": False,
+        "hide_school_marks": True,  # 메뉴 끝의 (j)·(조식) 같은 학교 내부 표기 (#36)
         "show_calorie": True,
         "expand_details": False,  # 재료·원산지를 기본으로 펼쳐 둘지
         "allergy_alerts": [],  # 빨갛게 표시할 알레르기 번호

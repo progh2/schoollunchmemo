@@ -823,3 +823,63 @@ class TestStableHeader:
         for left, right in zip(rects, rects[1:]):
             assert left.right() < right.left()
         assert rects[-1].right() <= note.card.contentsRect().right()
+
+
+class TestSchoolMarksOnNote:
+    """포스트잇은 기본으로 학교 내부 표기를 숨긴다 (#36)."""
+
+    ROWS = [
+        {
+            "MLSV_YMD": "20260929",
+            "MMEAL_SC_CODE": "2",
+            "MMEAL_SC_NM": "중식",
+            "DDISH_NM": "현미밥(j) <br/>소고기콩나물해장국(j) (5.6.9.16.18)<br/>깍두기(조식) (9)",
+        }
+    ]
+
+    def _render(self, note, **options):
+        note.render_view(
+            NoteView(day=date(2026, 9, 29), meals=parse_meals(self.ROWS), **options)
+        )
+        return note.body.text()
+
+    def test_hidden_by_default(self, note):
+        html = self._render(note)
+        assert "현미밥" in html and "깍두기" in html
+        assert "(j)" not in html and "(조식)" not in html
+
+    def test_shown_when_asked(self, note):
+        html = self._render(note, show_marks=True)
+        assert "현미밥(j)" in html
+        assert "깍두기(조식)" in html
+
+    def test_allergy_alert_still_highlights(self, note):
+        from app.sticky import DANGER_COLOR
+
+        html = self._render(note, allergy_alerts=frozenset({9}))
+        assert DANGER_COLOR in html
+        assert "(j)" not in html
+
+
+def test_settings_round_trip_school_marks(qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.settings_dialog import SettingsDialog
+
+    monkeypatch.setattr(Config, "save", lambda self: None)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    config = Config()
+    dialog = SettingsDialog(config)
+    try:
+        assert dialog.marks_check.isChecked()  # 기본은 숨김
+        dialog.marks_check.setChecked(False)
+        dialog._on_save()
+        assert config.display["hide_school_marks"] is False
+
+        reopened = SettingsDialog(config)
+        assert reopened.marks_check.isChecked() is False
+        reopened.deleteLater()
+    finally:
+        dialog.deleteLater()

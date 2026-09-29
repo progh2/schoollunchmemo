@@ -442,6 +442,7 @@ class AppController(QObject):
                 meal_note=f"📭 {no_meal}",
                 footer=footer,
                 show_allergy=bool(display.get("show_allergy", False)),
+                show_marks=not bool(display.get("hide_school_marks", True)),
                 show_calorie=bool(display.get("show_calorie", True)),
                 allergy_alerts=frozenset(
                     int(code)

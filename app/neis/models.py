@@ -54,6 +54,8 @@ class School:
 class Dish:
     name: str
     allergens: tuple[str, ...] = ()
+    #: 이름 끝에 붙어 있던 학교 내부 표기. 예: ("j",), ("조식",) (#36)
+    marks: tuple[str, ...] = ()
 
     def display(self, show_allergens: bool = False) -> str:
         if show_allergens and self.allergens:

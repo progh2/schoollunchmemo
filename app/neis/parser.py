@@ -31,6 +31,12 @@ log = logging.getLogger(__name__)
 
 _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _ALLERGEN_RE = re.compile(r"[（(]\s*([\d][\d\s.,]*)\s*[)）]\s*$")
+#: 학교가 이름 끝에 붙이는 내부 표기 (#36). 뜻을 알 수 없는 짧은 기호만 고른다.
+#:   영문 1~3자  (j) (jn) (J)          — 학교마다 다른 조리·배식 구분 기호
+#:   한글 1자    (완) (조) (과)        — 완제품·조리실 같은 줄임말
+#:   식사 구분   (조식) (중식) (석식)  — 다른 끼니와 같이 쓰는 반찬 표시
+#: '셀프토스트바(크루와상)'처럼 설명이 담긴 괄호는 건드리지 않는다.
+_MARK_RE = re.compile(r"[（(]\s*([A-Za-z]{1,3}|[가-힣]|[조중석]식)\s*[)）]\s*$")
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _GRADE_KEYS = {
     "ONE_GRADE_EVENT_YN": 1,
@@ -122,14 +128,27 @@ def parse_dishes(raw: str) -> tuple[Dish, ...]:
         if not name:
             continue
         allergens: tuple[str, ...] = ()
-        match = _ALLERGEN_RE.search(name)
-        if match:
-            numbers = [n for n in re.split(r"[.,\s]+", match.group(1)) if n.isdigit()]
-            if numbers:
-                allergens = tuple(numbers)
+        marks: list[str] = []
+        # 끝에서부터 알레르기 번호와 내부 표기를 번갈아 떼어 낸다.
+        # '현미밥(j) (5.6)'도, '현미밥 (5.6)(j)'도 같은 결과가 나온다.
+        while True:
+            match = _ALLERGEN_RE.search(name)
+            if match and not allergens:
+                numbers = [
+                    n for n in re.split(r"[.,\s]+", match.group(1)) if n.isdigit()
+                ]
+                if numbers:
+                    allergens = tuple(numbers)
+                    name = name[: match.start()].strip()
+                    continue
+            match = _MARK_RE.search(name)
+            if match and match.start() > 0:
+                marks.insert(0, match.group(1))
                 name = name[: match.start()].strip()
+                continue
+            break
         if name:
-            dishes.append(Dish(name=name, allergens=allergens))
+            dishes.append(Dish(name=name, allergens=allergens, marks=tuple(marks)))
     return tuple(dishes)
 
 
