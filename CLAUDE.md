@@ -4,8 +4,7 @@ PySide6 데스크톱 포스트잇 위젯. NEIS 공개 API(인증키 없음, 일 
 급식·학사일정을 보여준다. 상세 설계는 `docs/PRD.md`, 구조는 `README.md` 참조.
 
 ## 컨텍스트 앵커
-- intent: v0.5.0 릴리스(#45) — #33~#38 (식사 시간 모드, 내부 표기 숨김,
-  5건 제한 나눠 부르기, 머리줄·검색 Enter·선택 색 수정)
+- intent: v0.5.1 릴리스(#51) — 원산지 강조(#47), 업데이트 재실행 수정(#48)
 - changes_made: 인증키 완전 제거, 달력·정보 탭 병합(PR #11 base 오류 복구),
   이름 '급식쪽지' 확정, 3플랫폼 자동 릴리스, 앱 아이콘(.ico/.icns) 임베드,
   PRD 현행화 + mermaid UML(README·PRD), 홈페이지 파스텔 리뉴얼,
@@ -27,6 +26,8 @@ PySide6 데스크톱 포스트잇 위젯. NEIS 공개 API(인증키 없음, 일 
 ## 규칙
 - 모든 작업은 GitHub 이슈로 추적하고 커밋 메시지에 `(#번호)` 연결
 - 릴리스는 태그 push로 자동 (release.yml, 3플랫폼). 태그 전 로컬 `pytest -q` 확인
+- 업데이트 경로는 CI `update-e2e`(tests/e2e/update_relaunch.py)가 실제 onefile 앱으로 지킨다.
+  updater가 새 버전을 띄울 땐 반드시 clean_environment()를 거친다(_PYI_* 상속 금지, #48)
 - 릴리스 자산 이름(`*-windows-x64.exe` / `*-macos.dmg` / `*-linux-x64`)은
   updater.py가 플랫폼을 고르는 기준(플랫폼 표시 + 끝부분)이다. 바꾸면 자동 업데이트가 끊긴다
 - 배포는 압축 없이 바로 실행(#29): Win/Linux는 onefile, macOS는 .app을 .dmg로.
