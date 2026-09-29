@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from html import escape
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -120,7 +120,9 @@ class SettingsDialog(QDialog):
         row = QHBoxLayout()
         self.search_edit = QLineEdit(tab)
         self.search_edit.setPlaceholderText("학교 이름의 일부를 입력하세요")
-        self.search_edit.returnPressed.connect(self._on_search)
+        # Enter는 검색만 한다. QLineEdit은 Enter를 대화상자로 흘려보내고,
+        # 대화상자는 그걸로 기본 버튼(저장)을 누른다 (#33). 여기서 가로챈다.
+        self.search_edit.installEventFilter(self)
         row.addWidget(self.search_edit, 1)
         self.search_button = QPushButton("검색", tab)
         self.search_button.clicked.connect(self._on_search)
@@ -145,6 +147,16 @@ class SettingsDialog(QDialog):
         self.selected_label.setWordWrap(True)
         layout.addWidget(self.selected_label)
         return tab
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if (
+            watched is self.search_edit
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        ):
+            self._on_search()
+            return True  # 대화상자까지 가지 않게 여기서 끝낸다
+        return super().eventFilter(watched, event)
 
     def _on_search(self) -> None:
         name = self.search_edit.text().strip()
